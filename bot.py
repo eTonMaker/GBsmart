@@ -608,8 +608,8 @@ from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler
 
-TOKEN = "توکن_بات_شما"
-WEBHOOK_URL = "https://نام-سرور-شما.onrender.com"
+TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"
+WEBHOOK_URL = "https://gbsmart-49kl.onrender.com"
 
 app = Flask(__name__)
 
