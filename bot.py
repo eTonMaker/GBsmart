@@ -108,7 +108,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit()
 
     # نمایش پیام خوشامدگویی و دکمه‌های عضویت در کانال‌ها
-   join_keyboard = [
+   
     join_keyboard = [
     [InlineKeyboardButton("عضویت در کانال شماره 1", url=f"https://t.me/{CHANNELS[0].lstrip('@')}")],
     [InlineKeyboardButton("عضویت در کانال شماره 2", url=f"https://t.me/{CHANNELS[1].lstrip('@')}")],
