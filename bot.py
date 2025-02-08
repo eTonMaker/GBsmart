@@ -563,3 +563,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+import os
+import threading
+from flask import Flask
+
+PORT = int(os.getenv("PORT", 5000))  # دریافت شماره پورت از متغیر محیطی
+
+app = Flask(__name__)
+
+# ایجاد یک سرور ساده که فقط پیام "Bot is running" را نمایش می‌دهد
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+# اجرای ربات تلگرام در یک ترد جداگانه
+def run_telegram_bot():
+    print("ربات تلگرام در حال اجرا است...")
+    application.run_polling()
+
+# اجرای ربات در یک ترد جداگانه برای جلوگیری از تایم‌اوت Render
+threading.Thread(target=run_telegram_bot, daemon=True).start()
+
+# اجرای سرور Flask
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=PORT)
+
