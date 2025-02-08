@@ -41,7 +41,7 @@ cursor = conn.cursor()
 
 def init_db():
     """ایجاد جداول پایگاه داده"""
-    cursor.execute("""...""")  # کد اولیه شما برای ایجاد جداول
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
             username TEXT,
