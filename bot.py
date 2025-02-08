@@ -603,3 +603,33 @@ if __name__ == "__main__":
 # اجرای سرور Flask
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=PORT)
+
+from flask import Flask, request
+from telegram import Update
+from telegram.ext import Application, CommandHandler
+
+TOKEN = "توکن_بات_شما"
+WEBHOOK_URL = "https://نام-سرور-شما.onrender.com"
+
+app = Flask(__name__)
+
+# مقداردهی bot
+application = Application.builder().token(TOKEN).build()
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is running!"
+
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(), application.bot)
+    application.process_update(update)
+    return "OK", 200
+
+def set_webhook():
+    application.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
+
+if __name__ == "__main__":
+    set_webhook()
+    app.run(host="0.0.0.0", port=8080)
+
