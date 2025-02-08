@@ -233,10 +233,10 @@ def main():
 
     # هندلرهای دستورهای مختلف
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$", per_message=True))
-    application.add_handler(CallbackQueryHandler(referral_link, pattern="^referral_link$", per_message=True))
-    application.add_handler(CallbackQueryHandler(referral_list, pattern="^referral_list$", per_message=True))
-    application.add_handler(CallbackQueryHandler(reward_info, pattern="^reward_info$", per_message=True))
+    application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
+    application.add_handler(CallbackQueryHandler(referral_link, pattern="^referral_link$"))
+    application.add_handler(CallbackQueryHandler(referral_list, pattern="^referral_list$"))
+    application.add_handler(CallbackQueryHandler(reward_info, pattern="^reward_info$"))
     application.add_handler(conversation_handler)
 
     # تنظیم Webhook
