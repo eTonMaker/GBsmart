@@ -20,6 +20,7 @@ from telegram.ext import (
 # تنظیمات اولیه
 # ============================
 
+
 TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # توکن واقعی خود را وارد کنید
 CHANNELS = ["@yourchannel1", "@yourchannel2"]  # کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
@@ -30,6 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 # ============================
 # پایگاه داده (SQLite)
 # ============================
@@ -39,7 +41,7 @@ cursor = conn.cursor()
 
 def init_db():
     """ایجاد جداول پایگاه داده"""
-    cursor.execute("""
+    cursor.execute("""...""")  # کد اولیه شما برای ایجاد جداول
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
             username TEXT,
@@ -227,7 +229,7 @@ conversation_handler = ConversationHandler(
     fallbacks=[],
 )
 
-def main():
+
     # راه‌اندازی ربات
     init_db()
 
@@ -242,17 +244,14 @@ def main():
     application.add_handler(conversation_handler)
 
     # تنظیم Webhook
-    
+    PORT = int(os.environ.get("PORT", 8443))  # مقدار پیش‌فرض 8443 اگر PORT موجود نبود
 
-PORT = int(os.environ.get("PORT", 8443))  # مقدار پیش‌فرض 8443 اگر PORT موجود نبود
-
-application.run_webhook(
-    listen="0.0.0.0",  # لیسن روی تمام اینترفیس‌ها
-    port=PORT,  # استفاده از پورت اختصاص داده‌شده توسط Render
-    url_path=TOKEN,
-    webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"
-)
-
+    application.run_webhook(
+        listen="0.0.0.0",  # لیسن روی تمام اینترفیس‌ها
+        port=PORT,  # استفاده از پورت اختصاص داده‌شده توسط Render
+        url_path=TOKEN,
+        webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"  # آدرس وب‌هوک شما
+    )
 
 if __name__ == "__main__":
     main()
