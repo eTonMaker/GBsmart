@@ -3,6 +3,7 @@ import sqlite3
 import random
 import string
 import datetime
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -240,7 +241,7 @@ def main():
     application.add_handler(conversation_handler)
 
     # تنظیم Webhook
-    import os
+    
 
 PORT = int(os.environ.get("PORT", 8443))  # مقدار پیش‌فرض 8443 اگر PORT موجود نبود
 
