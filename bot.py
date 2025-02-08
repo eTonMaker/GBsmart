@@ -240,12 +240,17 @@ def main():
     application.add_handler(conversation_handler)
 
     # تنظیم Webhook
-    application.run_webhook(
-        listen="0.0.0.0",  # یا IP عمومی سرور
-        port=443,  # پورت HTTPS
-        url_path=TOKEN,  # مسیر برای تلگرام
-        webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"  # آدرس وب‌هوک شما
-    )
+    import os
+
+PORT = int(os.environ.get("PORT", 8443))  # مقدار پیش‌فرض 8443 اگر PORT موجود نبود
+
+application.run_webhook(
+    listen="0.0.0.0",  # لیسن روی تمام اینترفیس‌ها
+    port=PORT,  # استفاده از پورت اختصاص داده‌شده توسط Render
+    url_path=TOKEN,
+    webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"
+)
+
 
 if __name__ == "__main__":
     main()
