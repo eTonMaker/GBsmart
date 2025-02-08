@@ -114,7 +114,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     [InlineKeyboardButton("عضویت در کانال شماره 2", url=f"https://t.me/{CHANNELS[1].lstrip('@')}")],
     [InlineKeyboardButton("تایید عضویت در کانال‌ها", callback_data="check_channels")]
 ]
-]
+
 reply_markup = InlineKeyboardMarkup(join_keyboard)
 await update.message.reply_text("لطفاً ابتدا در کانال‌های زیر عضو شوید و سپس روی تایید عضویت کلیک کنید:", reply_markup=reply_markup)
 
