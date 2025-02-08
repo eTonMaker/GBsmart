@@ -558,7 +558,7 @@ def main():
     job_queue.run_repeating(check_referrals_job, interval=3600, first=10)
 
     # شروع ربات (حالت polling)
-    application.run_polling()
+   
 
 
 if __name__ == "__main__":
