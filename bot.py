@@ -231,6 +231,8 @@ conversation_handler = ConversationHandler(
 
 
     # راه‌اندازی ربات
+    def main():
+    # راه‌اندازی ربات
     init_db()
 
     application = Application.builder().token(TOKEN).build()
@@ -250,8 +252,10 @@ conversation_handler = ConversationHandler(
         listen="0.0.0.0",  # لیسن روی تمام اینترفیس‌ها
         port=PORT,  # استفاده از پورت اختصاص داده‌شده توسط Render
         url_path=TOKEN,
-        webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"  # آدرس وب‌هوک شما
+        webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"
     )
+
 
 if __name__ == "__main__":
     main()
+
