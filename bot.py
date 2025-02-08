@@ -16,6 +16,12 @@ from telegram.ext import (
     ContextTypes,
 )
 
+# تنظیمات لاگ
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
 # ============================
 # تنظیمات اولیه
 # ============================
@@ -70,7 +76,6 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("reward_per_user", "10"))
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("required_days", "30"))
     conn.commit()
-
 # ============================
 # دستورات و هندلرهای ربات
 # ============================
@@ -79,6 +84,8 @@ SUPPORT_MESSAGE = 1  # شناسه مرحله مکالمه پشتیبانی
 
 # /start : ثبت کاربر جدید، بررسی پارامتر دعوت و نمایش دکمه‌های عضویت در کانال‌ها
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Received /start command from {update.effective_user.id}")
+    
     user = update.effective_user
     args = context.args
     telegram_id = user.id
@@ -116,6 +123,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # بررسی عضویت کاربر در کانال‌ها
 async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Checking channel membership for user {update.callback_query.from_user.id}")
+    
     query = update.callback_query
     user = query.from_user
     telegram_id = user.id
@@ -127,7 +136,7 @@ async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 all_joined = False
                 break
         except Exception as e:
-            logger.error(f"خطا در بررسی عضویت کاربر {telegram_id} در {channel}: {e}")
+            logger.error(f"Error checking membership for user {telegram_id} in {channel}: {e}")
             all_joined = False
             break
 
@@ -215,6 +224,12 @@ conversation_handler = ConversationHandler(
     fallbacks=[],
 )
 
+
+
+# ============================
+# تنظیمات و استارت ربات
+# ============================
+
 def main():
     # راه‌اندازی ربات
     init_db()
@@ -224,10 +239,6 @@ def main():
     # هندلرهای دستورهای مختلف
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
-    application.add_handler(CallbackQueryHandler(referral_link, pattern="^referral_link$"))
-    application.add_handler(CallbackQueryHandler(referral_list, pattern="^referral_list$"))
-    application.add_handler(CallbackQueryHandler(reward_info, pattern="^reward_info$"))
-    application.add_handler(conversation_handler)
 
     # تنظیم Webhook
     PORT = int(os.environ.get("PORT", 8443))  # مقدار پیش‌فرض 8443 اگر PORT موجود نبود
@@ -239,6 +250,9 @@ def main():
         webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"
     )
 
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
