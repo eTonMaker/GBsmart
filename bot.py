@@ -565,35 +565,40 @@ if __name__ == "__main__":
     main()
 
 import os
-import threading
-from flask import Flask
+from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 TOKEN = os.getenv("TOKEN")  # دریافت توکن از متغیر محیطی
-PORT = int(os.getenv("PORT", 5000))  # پورت پیش‌فرض برای Flask
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # لینک وبهوک روی Render
+PORT = int(os.getenv("PORT", 5000))  # پورت اجرا
 
 app = Flask(__name__)
 
-# ایجاد ربات تلگرام
+application = Application.builder().token(TOKEN).build()
+
 async def start(update: Update, context):
     await update.message.reply_text("سلام! ربات فعال است.")
 
-application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 
-# تابعی برای اجرای ربات در یک ترد جداگانه
-def run_telegram_bot():
-    print("ربات تلگرام در حال اجرا است...")
-    application.run_polling()
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    """این تابع درخواست‌های ورودی تلگرام را پردازش می‌کند"""
+    update = Update.de_json(request.get_json(), application.bot)
+    application.process_update(update)
+    return "OK", 200
 
-# ایجاد یک سرور ساده که فقط پیام "Bot is running" را برمی‌گرداند
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "Bot is running!", 200
 
-# اجرای ربات تلگرام در یک ترد جداگانه
-threading.Thread(target=run_telegram_bot, daemon=True).start()
+if __name__ == "__main__":
+    # تنظیم Webhook هنگام شروع برنامه
+    application.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
+    
+    # اجرای Flask
+    app.run(host="0.0.0.0", port=PORT)
 
 # اجرای سرور Flask
 if __name__ == '__main__':
