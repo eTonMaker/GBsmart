@@ -108,13 +108,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit()
 
     # نمایش پیام خوشامدگویی و دکمه‌های عضویت در کانال‌ها
-    join_keyboard = [
-        [InlineKeyboardButton("عضویت در کانال شماره 1", url=f"https://t.me/{CHANNELS[0].lstrip('@')}")],
-        [InlineKeyboardButton("عضویت در کانال شماره 2", url=f"https://t.me/{CHANNELS[1].lstrip('@')}")],
-        [InlineKeyboardButton("تایید عضویت در کانال‌ها", callback_data="check_channels")]
-    ]
-    reply_markup = InlineKeyboardMarkup(join_keyboard)
-    await update.message.reply_text("لطفاً ابتدا در کانال‌های زیر عضو شوید و سپس روی تایید عضویت کلیک کنید:", reply_markup=reply_markup)
+   join_keyboard = [
+    [InlineKeyboardButton("عضویت در کانال شماره 1", url=f"https://t.me/{CHANNELS[0].lstrip('@')}")],
+    [InlineKeyboardButton("عضویت در کانال شماره 2", url=f"https://t.me/{CHANNELS[1].lstrip('@')}")],
+    [InlineKeyboardButton("تایید عضویت در کانال‌ها", callback_data="check_channels")]
+]
+reply_markup = InlineKeyboardMarkup(join_keyboard)
+await update.message.reply_text("لطفاً ابتدا در کانال‌های زیر عضو شوید و سپس روی تایید عضویت کلیک کنید:", reply_markup=reply_markup)
 
 # بررسی عضویت کاربر در کانال‌ها
 async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
