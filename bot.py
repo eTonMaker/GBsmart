@@ -43,6 +43,7 @@ cursor = conn.cursor()
 
 
 def init_db():
+    """ایجاد جداول پایگاه داده"""
     # جدول کاربران
     cursor.execute(
         """
@@ -254,382 +255,68 @@ async def reward_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     valid_invited = cursor.fetchone()[0]
     total_reward = valid_invited * reward_per_user
-    keyboard = [[InlineKeyboardButton("دریافت پاداش", callback_data="claim_reward")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     await query.answer()
-    await query.message.reply_text(
-        f"پاداش شما: {total_reward} تون کوین", reply_markup=reply_markup
-    )
+    await query.message.reply_text(f"پاداش شما: {total_reward} تومان")
 
 
-# درخواست دریافت پاداش (کاربر باید آدرس کیف پول خود را وارد کند)
-async def claim_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# تماس با پشتیبانی
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("لطفاً آدرس کیف پول خود را وارد کنید:")
-    return WALLET_INPUT  # رفتن به حالت دریافت آدرس کیف پول
+    await query.message.reply_text("لطفاً پیام خود را ارسال کنید:")
+
+    return SUPPORT_MESSAGE
 
 
-# دریافت و ثبت آدرس کیف پول
-async def wallet_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = update.message.from_user.id
-    wallet_address = update.message.text.strip()
-    # در اینجا می‌توانید اعتبارسنجی آدرس کیف پول را اضافه کنید
+async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    telegram_id = user.id
+    message = update.message.text
     cursor.execute(
-        "UPDATE users SET wallet_address=? WHERE telegram_id=?",
-        (wallet_address, telegram_id),
+        "INSERT INTO support (telegram_id, message) VALUES (?, ?)", (telegram_id, message)
     )
     conn.commit()
-    await update.message.reply_text(
-        "آدرس کیف پول ثبت شد. پاداش شما به زودی واریز خواهد شد."
-    )
-    return ConversationHandler.END
+    await update.message.reply_text("پیام شما به پشتیبانی ارسال شد.")
 
-
-# درخواست پیام پشتیبانی
-async def support_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("لطفاً پیام خود را برای پشتیبانی ارسال کنید:")
-    return SUPPORT_MESSAGE  # رفتن به حالت دریافت پیام پشتیبانی
-
-
-# دریافت پیام پشتیبانی از کاربر
-async def support_message_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = update.message.from_user.id
-    message_text = update.message.text
-    cursor.execute(
-        "INSERT INTO support (telegram_id, message) VALUES (?,?)",
-        (telegram_id, message_text),
-    )
-    conn.commit()
     # ارسال پیام به ادمین‌ها
     for admin_id in ADMINS:
-        try:
-            await context.bot.send_message(
-                admin_id,
-                f"پیام پشتیبانی از کاربر {telegram_id}:\n{message_text}",
-            )
-        except Exception as e:
-            logger.error(f"خطا در ارسال پیام پشتیبانی به ادمین {admin_id}: {e}")
-    await update.message.reply_text(
-        "پیام شما ارسال شد. پشتیبانی به زودی با شما تماس خواهد گرفت."
-    )
-    return ConversationHandler.END
-
-
-# هندلر لغو (برای مواقعی که کاربر یا ادمین عملیات را لغو کند)
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("عملیات لغو شد.")
-    return ConversationHandler.END
-
-
-# ============================
-# پنل ادمین
-# ============================
-
-# دستور /admin برای نمایش منوی ادمین
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if user.id not in ADMINS:
-        await update.message.reply_text("شما اجازه دسترسی به پنل ادمین را ندارید.")
-        return
-    keyboard = [
-        [InlineKeyboardButton("تعداد اعضا", callback_data="admin_total_users")],
-        [InlineKeyboardButton("پاسخ به پیام اعضا", callback_data="admin_support")],
-        [InlineKeyboardButton("چک کردن اعضا", callback_data="admin_check_user")],
-        [InlineKeyboardButton("لیست کاربران برای پاداش", callback_data="admin_reward_list")],
-        [InlineKeyboardButton("تنظیم میزان پاداش برای هر نفر", callback_data="admin_set_reward")],
-        [InlineKeyboardButton("تنظیم تعداد روز", callback_data="admin_set_days")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("پنل ادمین:", reply_markup=reply_markup)
-
-
-# نمایش تعداد کل اعضا
-async def admin_total_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
-    await query.answer()
-    await query.message.reply_text(f"تعداد اعضا: {total_users}")
-
-
-# برای تنظیم میزان پاداش و تعداد روز (ورودی از ادمین گرفته می‌شود)
-async def admin_set_reward_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("لطفاً میزان پاداش برای هر نفر را وارد کنید:")
-    admin_operation[query.from_user.id] = "set_reward"
-    return 1
-
-
-async def admin_set_days_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("لطفاً تعداد روز مورد نیاز برای تایید عضویت را وارد کنید:")
-    admin_operation[query.from_user.id] = "set_days"
-    return 1
-
-
-# هندلر ورودی‌های متنی ادمین برای تنظیم مقادیر یا جستجوی کاربر
-async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    operation = admin_operation.get(user_id)
-    if operation == "set_reward":
-        try:
-            new_reward = float(update.message.text.strip())
-            cursor.execute(
-                "UPDATE settings SET value=? WHERE key='reward_per_user'",
-                (str(new_reward),),
-            )
-            conn.commit()
-            await update.message.reply_text(f"میزان پاداش برای هر نفر به {new_reward} تغییر کرد.")
-        except ValueError:
-            await update.message.reply_text("مقدار وارد شده صحیح نیست.")
-    elif operation == "set_days":
-        try:
-            new_days = int(update.message.text.strip())
-            cursor.execute(
-                "UPDATE settings SET value=? WHERE key='required_days'",
-                (str(new_days),),
-            )
-            conn.commit()
-            await update.message.reply_text(f"تعداد روز مورد نیاز به {new_days} تغییر کرد.")
-        except ValueError:
-            await update.message.reply_text("مقدار وارد شده صحیح نیست.")
-    elif operation == "check_user":
-        # جستجوی کاربر بر اساس آیدی یا نام کاربری
-        identifier = update.message.text.strip()
-        cursor.execute(
-            "SELECT telegram_id, username, referral_code, inviter_id FROM users WHERE telegram_id=? OR username=?",
-            (identifier, identifier),
+        await context.bot.send_message(
+            admin_id, f"پیام پشتیبانی از کاربر {telegram_id}:\n{message}"
         )
-        user_data = cursor.fetchone()
-        if user_data:
-            telegram_id, username, referral_code, inviter_id = user_data
-            cursor.execute(
-                "SELECT COUNT(*), SUM(verified) FROM referrals WHERE inviter_id=?",
-                (telegram_id,),
-            )
-            data = cursor.fetchone()
-            total_invites = data[0] if data[0] else 0
-            valid_invites = data[1] if data[1] else 0
-            await update.message.reply_text(
-                f"کاربر: {username} (ID: {telegram_id})\nکد دعوت: {referral_code}\nدعوت شدگان: {total_invites}\nدعوت شدگان معتبر: {valid_invites}"
-            )
-        else:
-            await update.message.reply_text("کاربر مورد نظر یافت نشد.")
-    admin_operation.pop(user_id, None)
+
     return ConversationHandler.END
 
 
-# درخواست جستجوی کاربر توسط ادمین
-async def admin_check_user_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("لطفاً نام کاربری یا آیدی کاربر را وارد کنید:")
-    admin_operation[query.from_user.id] = "check_user"
-    return 1
-
-
-# نمایش لیست کاربران و تعداد دعوت‌های معتبر آن‌ها (برای پاداش)
-async def admin_reward_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    cursor.execute(
-        """
-        SELECT u.telegram_id, u.username,
-        (SELECT COUNT(*) FROM referrals WHERE inviter_id=u.telegram_id AND verified=1) as valid_count
-        FROM users u
-        """
-    )
-    rows = cursor.fetchall()
-    message_text = "لیست کاربران و تعداد دعوت‌های معتبر:\n"
-    for row in rows:
-        telegram_id, username, valid_count = row
-        message_text += f"{username} (ID: {telegram_id}): {valid_count}\n"
-    await query.answer()
-    await query.message.reply_text(message_text)
-
-
 # ============================
-# وظیفه زمان‌بندی شده برای بررسی دعوت‌ها (۳۰ روز)
+# تنظیمات و استارت ربات
 # ============================
 
-async def check_referrals_job(context: ContextTypes.DEFAULT_TYPE):
-    # دریافت تعداد روز مورد نیاز از تنظیمات
-    cursor.execute("SELECT value FROM settings WHERE key='required_days'")
-    required_days = int(cursor.fetchone()[0])
-    now = datetime.datetime.now()
-    cursor.execute(
-        "SELECT id, invited_id, join_date, verified FROM referrals WHERE verified=0"
-    )
-    rows = cursor.fetchall()
-    for row in rows:
-        ref_id, invited_id, join_date_str, verified = row
-        join_date = datetime.datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
-        diff = now - join_date
-        if diff.days >= required_days:
-            # بررسی عضویت دعوت‌شونده در تمامی کانال‌ها
-            all_joined = True
-            for channel in CHANNELS:
-                try:
-                    member = await context.bot.get_chat_member(channel, invited_id)
-                    if member.status not in ["member", "creator", "administrator"]:
-                        all_joined = False
-                        break
-                except Exception as e:
-                    logger.error(f"خطا در بررسی عضویت {invited_id} در {channel}: {e}")
-                    all_joined = False
-                    break
-            if all_joined:
-                # به‌روزرسانی وضعیت دعوت به عنوان معتبر
-                cursor.execute(
-                    "UPDATE referrals SET verified=1, verified_date=? WHERE id=?",
-                    (now.strftime("%Y-%m-%d %H:%M:%S"), ref_id),
-                )
-                conn.commit()
-
-
-# ============================
-# راه‌اندازی ربات
-# ============================
+# هندلرهای درخواست‌های مختلف
+conversation_handler = ConversationHandler(
+    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+    states={
+        SUPPORT_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)],
+    },
+    fallbacks=[],
+)
 
 def main():
+    # راه‌اندازی ربات
     init_db()
 
     application = Application.builder().token(TOKEN).build()
 
-    # ثبت هندلرهای دستورات
+    # هندلرهای دستورهای مختلف
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("admin", admin_panel))
-
-    # هندلرهای CallbackQuery برای منوی اصلی
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
     application.add_handler(CallbackQueryHandler(referral_link, pattern="^referral_link$"))
     application.add_handler(CallbackQueryHandler(referral_list, pattern="^referral_list$"))
     application.add_handler(CallbackQueryHandler(reward_info, pattern="^reward_info$"))
-    application.add_handler(CallbackQueryHandler(claim_reward, pattern="^claim_reward$"))
-    application.add_handler(CallbackQueryHandler(support_request, pattern="^support$"))
+    application.add_handler(conversation_handler)
 
-    # هندلرهای CallbackQuery مربوط به پنل ادمین
-    application.add_handler(CallbackQueryHandler(admin_total_users, pattern="^admin_total_users$"))
-    application.add_handler(CallbackQueryHandler(admin_reward_list, pattern="^admin_reward_list$"))
-    application.add_handler(CallbackQueryHandler(admin_set_reward_prompt, pattern="^admin_set_reward$"))
-    application.add_handler(CallbackQueryHandler(admin_set_days_prompt, pattern="^admin_set_days$"))
-    application.add_handler(CallbackQueryHandler(admin_check_user_prompt, pattern="^admin_check_user$"))
-
-    # ConversationHandler برای دریافت آدرس کیف پول (در حالت دریافت پاداش)
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(claim_reward, pattern="^claim_reward$")],
-        states={
-            WALLET_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, wallet_received)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(conv_handler)
-
-    # ConversationHandler برای دریافت پیام پشتیبانی
-    support_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(support_request, pattern="^support$")],
-        states={
-            SUPPORT_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message_received)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(support_conv)
-
-    # ConversationHandler برای ورودی‌های ادمین (تنظیم پاداش، روز، یا جستجوی کاربر)
-    admin_conv = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(admin_set_reward_prompt, pattern="^admin_set_reward$"),
-            CallbackQueryHandler(admin_set_days_prompt, pattern="^admin_set_days$"),
-            CallbackQueryHandler(admin_check_user_prompt, pattern="^admin_check_user$")
-        ],
-        states={
-            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_input_handler)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(admin_conv)
-
-    # زمان‌بندی وظیفه بررسی دعوت‌ها (هر ساعت یکبار)
-    job_queue = application.job_queue
-    job_queue.run_repeating(check_referrals_job, interval=3600, first=10)
-
-    # شروع ربات (حالت polling)
-   
+    # شروع ربات
+    application.run_polling()
 
 
 if __name__ == "__main__":
     main()
-
-import os
-from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-
-TOKEN = os.getenv("TOKEN")  # دریافت توکن از متغیر محیطی
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # لینک وبهوک روی Render
-PORT = int(os.getenv("PORT", 5000))  # پورت اجرا
-
-app = Flask(__name__)
-
-application = Application.builder().token(TOKEN).build()
-
-async def start(update: Update, context):
-    await update.message.reply_text("سلام! ربات فعال است.")
-
-application.add_handler(CommandHandler("start", start))
-
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    """این تابع درخواست‌های ورودی تلگرام را پردازش می‌کند"""
-    update = Update.de_json(request.get_json(), application.bot)
-    application.process_update(update)
-    return "OK", 200
-
-@app.route('/')
-def home():
-    return "Bot is running!", 200
-
-if __name__ == "__main__":
-    # تنظیم Webhook هنگام شروع برنامه
-    application.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
-    
-    # اجرای Flask
-    app.run(host="0.0.0.0", port=PORT)
-
-# اجرای سرور Flask
-if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=PORT)
-
-from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler
-
-TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"
-WEBHOOK_URL = "https://gbsmart-49kl.onrender.com"
-
-app = Flask(__name__)
-
-# مقداردهی bot
-application = Application.builder().token(TOKEN).build()
-
-@app.route("/", methods=["GET"])
-def home():
-    return "Bot is running!"
-
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(), application.bot)
-    application.process_update(update)
-    return "OK", 200
-
-def set_webhook():
-    application.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
-
-if __name__ == "__main__":
-    set_webhook()
-    app.run(host="0.0.0.0", port=8080)
-
