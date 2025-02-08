@@ -20,7 +20,6 @@ from telegram.ext import (
 # تنظیمات اولیه
 # ============================
 
-
 TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # توکن واقعی خود را وارد کنید
 CHANNELS = ["@yourchannel1", "@yourchannel2"]  # کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
@@ -31,7 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 # ============================
 # پایگاه داده (SQLite)
 # ============================
@@ -41,18 +39,15 @@ cursor = conn.cursor()
 
 def init_db():
     """ایجاد جداول پایگاه داده"""
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
+    cursor.execute("""CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
             username TEXT,
             referral_code TEXT UNIQUE,
             inviter_id INTEGER,
             join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             wallet_address TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS referrals (
+        )""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS referrals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             inviter_id INTEGER,
             invited_id INTEGER,
@@ -60,32 +55,21 @@ def init_db():
             verified INTEGER DEFAULT 0,
             verified_date TIMESTAMP,
             reward_claimed INTEGER DEFAULT 0
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
+        )""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS support (
+        )""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS support (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
             message TEXT,
             reply TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+        )""")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("reward_per_user", "10"))
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("required_days", "30"))
     conn.commit()
-
-def generate_referral_code(length=6):
-    """تولید کد دعوت تصادفی"""
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
-
-SUPPORT_MESSAGE, WALLET_INPUT = range(2)
 
 # ============================
 # دستورات و هندلرهای ربات
@@ -229,9 +213,7 @@ conversation_handler = ConversationHandler(
     fallbacks=[],
 )
 
-
-    # راه‌اندازی ربات
-    def main():
+def main():
     # راه‌اندازی ربات
     init_db()
 
@@ -258,4 +240,3 @@ conversation_handler = ConversationHandler(
 
 if __name__ == "__main__":
     main()
-
