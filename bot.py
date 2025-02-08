@@ -4,7 +4,7 @@ import random
 import string
 import datetime
 import os
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
+from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -29,12 +29,6 @@ logger = logging.getLogger(__name__)
 TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # توکن واقعی خود را وارد کنید
 CHANNELS = ["@yourchannel1", "@yourchannel2"]  # کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
-
-# تنظیمات لاگ
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-logger = logging.getLogger(__name__)
 
 # ============================
 # پایگاه داده (SQLite)
@@ -76,6 +70,7 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("reward_per_user", "10"))
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", ("required_days", "30"))
     conn.commit()
+
 # ============================
 # دستورات و هندلرهای ربات
 # ============================
@@ -169,71 +164,26 @@ async def referral_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.answer("کاربر شما پیدا نشد!", show_alert=True)
 
-# نمایش لیست دعوت‌ها
-async def referral_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    telegram_id = query.from_user.id
-    cursor.execute("SELECT COUNT(*) FROM referrals WHERE inviter_id=?", (telegram_id,))
-    total_invited = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM referrals WHERE inviter_id=? AND verified=1", (telegram_id,))
-    valid_invited = cursor.fetchone()[0]
-    await query.answer()
-    await query.message.reply_text(f"تعداد دعوت شدگان: {total_invited}\nتعداد دعوت شدگان معتبر (۳۰ روز): {valid_invited}")
-
-# نمایش اطلاعات پاداش کاربر
-async def reward_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    telegram_id = query.from_user.id
-    cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'")
-    reward_per_user = float(cursor.fetchone()[0])
-    cursor.execute("SELECT COUNT(*) FROM referrals WHERE inviter_id=? AND verified=1", (telegram_id,))
-    valid_invited = cursor.fetchone()[0]
-    total_reward = valid_invited * reward_per_user
-    await query.answer()
-    await query.message.reply_text(f"پاداش شما: {total_reward} تومان")
-
-# تماس با پشتیبانی
-async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("لطفاً پیام خود را ارسال کنید:")
-    return SUPPORT_MESSAGE
-
-async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    telegram_id = user.id
-    message = update.message.text
-    cursor.execute("INSERT INTO support (telegram_id, message) VALUES (?, ?)", (telegram_id, message))
-    conn.commit()
-    await update.message.reply_text("پیام شما به پشتیبانی ارسال شد.")
-
-    # ارسال پیام به ادمین‌ها
-    for admin_id in ADMINS:
-        await context.bot.send_message(admin_id, f"پیام پشتیبانی از کاربر {telegram_id}:\n{message}")
-
-    return ConversationHandler.END
-
 # ============================
 # تنظیمات و استارت ربات
 # ============================
 
-# هندلرهای درخواست‌های مختلف
-conversation_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-    states={SUPPORT_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]},
-    fallbacks=[],
-)
+# ایجاد Flask برای مدیریت Webhook
+app = Flask(__name__)
 
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    json_str = request.get_data(as_text=True)
+    update = Update.de_json(json_str, application.bot)
+    application.process_update(update)
+    return "", 200
 
-
-# ============================
-# تنظیمات و استارت ربات
-# ============================
-
+# راه‌اندازی ربات
 def main():
     # راه‌اندازی ربات
     init_db()
 
+    global application
     application = Application.builder().token(TOKEN).build()
 
     # هندلرهای دستورهای مختلف
@@ -242,17 +192,13 @@ def main():
 
     # تنظیم Webhook
     PORT = int(os.environ.get("PORT", 8443))  # مقدار پیش‌فرض 8443 اگر PORT موجود نبود
-
+    webhook_url = f"https://gbsmart-49kl.onrender.com/{TOKEN}"
     application.run_webhook(
         listen="0.0.0.0",  # لیسن روی تمام اینترفیس‌ها
         port=PORT,  # استفاده از پورت اختصاص داده‌شده توسط Render
         url_path=TOKEN,
-        webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"
+        webhook_url=webhook_url
     )
-
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
