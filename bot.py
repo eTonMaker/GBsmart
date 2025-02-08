@@ -239,8 +239,13 @@ def main():
     application.add_handler(CallbackQueryHandler(reward_info, pattern="^reward_info$"))
     application.add_handler(conversation_handler)
 
-    # شروع ربات
-    application.run_polling()
+    # تنظیم Webhook
+    application.run_webhook(
+        listen="0.0.0.0",  # یا IP عمومی سرور
+        port=443,  # پورت HTTPS
+        url_path=TOKEN,  # مسیر برای تلگرام
+        webhook_url=f"https://gbsmart-49kl.onrender.com/{TOKEN}"  # آدرس وب‌هوک شما
+    )
 
 if __name__ == "__main__":
     main()
