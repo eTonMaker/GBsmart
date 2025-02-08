@@ -75,6 +75,8 @@ def init_db():
 # دستورات و هندلرهای ربات
 # ============================
 
+SUPPORT_MESSAGE = 1  # شناسه مرحله مکالمه پشتیبانی
+
 # /start : ثبت کاربر جدید، بررسی پارامتر دعوت و نمایش دکمه‌های عضویت در کانال‌ها
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
