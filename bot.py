@@ -567,25 +567,34 @@ if __name__ == "__main__":
 import os
 import threading
 from flask import Flask
+from telegram import Update
+from telegram.ext import Application, CommandHandler
 
-PORT = int(os.getenv("PORT", 5000))  # دریافت شماره پورت از متغیر محیطی
+TOKEN = os.getenv("TOKEN")  # دریافت توکن از متغیر محیطی
+PORT = int(os.getenv("PORT", 5000))  # پورت پیش‌فرض برای Flask
 
 app = Flask(__name__)
 
-# ایجاد یک سرور ساده که فقط پیام "Bot is running" را نمایش می‌دهد
+# ایجاد ربات تلگرام
+async def start(update: Update, context):
+    await update.message.reply_text("سلام! ربات فعال است.")
+
+application = Application.builder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+
+# تابعی برای اجرای ربات در یک ترد جداگانه
+def run_telegram_bot():
+    print("ربات تلگرام در حال اجرا است...")
+    application.run_polling()
+
+# ایجاد یک سرور ساده که فقط پیام "Bot is running" را برمی‌گرداند
 @app.route('/')
 def home():
     return "Bot is running!"
 
 # اجرای ربات تلگرام در یک ترد جداگانه
-def run_telegram_bot():
-    print("ربات تلگرام در حال اجرا است...")
-    application.run_polling()
-
-# اجرای ربات در یک ترد جداگانه برای جلوگیری از تایم‌اوت Render
 threading.Thread(target=run_telegram_bot, daemon=True).start()
 
 # اجرای سرور Flask
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=PORT)
-
