@@ -19,7 +19,7 @@ from telegram.ext import (
 # تنظیمات
 # ============================
 
-TOKEN = "توکن_ربات_تلگرام_اینجا"  # جایگزین کنید
+TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # جایگزین کنید
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN  # آدرس وب‌هوک
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]  # لیست کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
