@@ -13,31 +13,33 @@ from telegram.ext import (
     filters,
     ContextTypes,
     ConversationHandler,
+    JobQueue
 )
 
 # ============================
 # تنظیمات
 # ============================
-
 TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # جایگزین کنید
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN  # جایگزین کنید
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]  # لیست کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
+SUPPORT = range(1)
 
 # تنظیمات لاگ
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 # ============================
 # پایگاه داده (SQLite)
 # ============================
-
 conn = sqlite3.connect("bot_database.db", check_same_thread=False)
 cursor = conn.cursor()
 
 def init_db():
-    """ایجاد جداول پایگاه داده در صورت عدم وجود"""
-    cursor.execute("""
+    """ایجاد جداول پایگاه داده"""
+    cursor.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY,
             username TEXT,
@@ -45,152 +47,225 @@ def init_db():
             inviter_id INTEGER,
             join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             wallet_address TEXT
-        )
-    """)
-    cursor.execute("""
+        );
+        
         CREATE TABLE IF NOT EXISTS referrals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             inviter_id INTEGER,
             invited_id INTEGER,
             join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             verified INTEGER DEFAULT 0
-        )
-    """)
-    cursor.execute("""
+        );
+        
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
-        )
-    """)
-    cursor.execute("""
+        );
+        
         CREATE TABLE IF NOT EXISTS support (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
             message TEXT,
             reply TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+        );
+        
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('reward_per_user', '10');
     """)
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('reward_per_user', '10')")
     conn.commit()
 
 init_db()
 
 # ============================
-# دستورات ربات
+# دستورات اصلی ربات
 # ============================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """شروع ربات و بررسی عضویت در کانال‌ها"""
     user = update.effective_user
     telegram_id = user.id
-    username = user.username if user.username else user.first_name
+    username = user.username or user.first_name
 
-    cursor.execute("SELECT * FROM users WHERE telegram_id=?", (telegram_id,))
-    result = cursor.fetchone()
-    
-    if not result:
+    if not cursor.execute("SELECT * FROM users WHERE telegram_id=?", (telegram_id,)).fetchone():
         referral_code = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         inviter_id = None
+        
         if context.args:
-            inviter_code = context.args[0]
-            cursor.execute("SELECT telegram_id FROM users WHERE referral_code=?", (inviter_code,))
-            inviter = cursor.fetchone()
-            if inviter:
-                inviter_id = inviter[0]
+            inviter = cursor.execute("SELECT telegram_id FROM users WHERE referral_code=?", (context.args[0],)).fetchone()
+            inviter_id = inviter[0] if inviter else None
 
-        cursor.execute("INSERT INTO users (telegram_id, username, referral_code, inviter_id) VALUES (?,?,?,?)", 
-                       (telegram_id, username, referral_code, inviter_id))
-        conn.commit()
+        cursor.execute(
+            "INSERT INTO users (telegram_id, username, referral_code, inviter_id) VALUES (?,?,?,?)",
+            (telegram_id, username, referral_code, inviter_id)
+        )
         if inviter_id:
             cursor.execute("INSERT INTO referrals (inviter_id, invited_id) VALUES (?,?)", (inviter_id, telegram_id))
-            conn.commit()
+        conn.commit()
 
-    join_keyboard = [
-        [InlineKeyboardButton("عضویت در کانال 1", url=f"https://t.me/{CHANNELS[0].lstrip('@')}")],
-        [InlineKeyboardButton("عضویت در کانال 2", url=f"https://t.me/{CHANNELS[1].lstrip('@')}")],
+    keyboard = [
+        [InlineKeyboardButton(f"عضویت در {chan}", url=f"https://t.me/{chan.lstrip('@')}") for chan in CHANNELS],
         [InlineKeyboardButton("✅ تایید عضویت", callback_data="check_channels")]
     ]
-    reply_markup = InlineKeyboardMarkup(join_keyboard)
-    await update.message.reply_text("📢 لطفاً در کانال‌ها عضو شوید و سپس تأیید کنید:", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "📢 لطفاً در کانال‌ها عضو شوید و سپس تأیید کنید:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """بررسی عضویت در کانال‌ها"""
     query = update.callback_query
-    user = query.from_user
-    telegram_id = user.id
-
+    user_id = query.from_user.id
+    
     all_joined = True
     for channel in CHANNELS:
         try:
-            member = await context.bot.get_chat_member(channel, telegram_id)
+            member = await context.bot.get_chat_member(channel, user_id)
             if member.status not in ["member", "creator", "administrator"]:
                 all_joined = False
                 break
-        except Exception:
+        except Exception as e:
+            logger.error(f"Channel check error: {e}")
             all_joined = False
-            break
 
     if all_joined:
-        await query.answer("✅ عضویت شما تأیید شد!")
-        main_menu_keyboard = [
+        keyboard = [
             [InlineKeyboardButton("🎁 دریافت لینک دعوت", callback_data="get_invite_link")],
-            [InlineKeyboardButton("💰 مشاهده موجودی", callback_data="check_balance")],
+            [InlineKeyboardButton("💰 موجودی", callback_data="check_balance")],
             [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
         ]
-        reply_markup = InlineKeyboardMarkup(main_menu_keyboard)
-
-        await query.message.reply_text(
-            "✅ شما در کانال‌ها عضو شدید. حالا می‌توانید از ربات استفاده کنید.",
-            reply_markup=reply_markup
+        await query.edit_message_text(
+            "✅ عضویت تأیید شد! از منوی زیر انتخاب کنید:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
-        await query.answer("❌ شما هنوز در کانال‌ها عضو نشده‌اید!", show_alert=True)
+        await query.answer("❌ هنوز در همه کانال‌ها عضو نشده‌اید!", show_alert=True)
 
+# ============================
+# سیستم دعوت و موجودی
+# ============================
 async def get_invite_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ارسال لینک دعوت برای کاربر"""
+    """تولید لینک دعوت"""
     query = update.callback_query
-    telegram_id = query.from_user.id
-
-    cursor.execute("SELECT referral_code FROM users WHERE telegram_id=?", (telegram_id,))
-    result = cursor.fetchone()
-
-    if result:
-        referral_code = result[0]
-        bot_info = await context.bot.get_me()  # دریافت اطلاعات ربات
-        bot_username = bot_info.username  # استخراج نام کاربری ربات
-        invite_link = f"https://t.me/{bot_username}?start={referral_code}"
-        await query.answer()
-        await query.message.reply_text(f"🎁 لینک دعوت شما:\n{invite_link}")
+    user_id = query.from_user.id
+    
+    if referral_code := cursor.execute(
+        "SELECT referral_code FROM users WHERE telegram_id=?", (user_id,)
+    ).fetchone()[0]:
+        bot_username = (await context.bot.get_me()).username
+        await query.message.reply_text(
+            f"🔗 لینک دعوت شما:\nhttps://t.me/{bot_username}?start={referral_code}"
+        )
     else:
-        await query.answer("⛔ خطا در دریافت لینک دعوت!", show_alert=True)
-
+        await query.answer("⛔ خطا در تولید لینک!", show_alert=True)
 
 async def check_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش موجودی کاربر"""
+    """نمایش موجودی"""
     query = update.callback_query
-    telegram_id = query.from_user.id
+    user_id = query.from_user.id
+    
+    referrals = cursor.execute(
+        "SELECT COUNT(*) FROM referrals WHERE inviter_id=?", (user_id,)
+    ).fetchone()[0]
+    
+    reward = int(cursor.execute(
+        "SELECT value FROM settings WHERE key='reward_per_user'"
+    ).fetchone()[0])
+    
+    await query.message.reply_text(
+        f"💎 موجودی شما: {referrals * reward} سکه\n👥 تعداد دعوت‌ها: {referrals}"
+    )
 
-    cursor.execute("SELECT COUNT(*) FROM referrals WHERE inviter_id=?", (telegram_id,))
-    referral_count = cursor.fetchone()[0]
-
-    cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'")
-    reward_per_user = int(cursor.fetchone()[0])
-    total_reward = referral_count * reward_per_user
-
-    await query.answer()
-    await query.message.reply_text(f"💰 موجودی شما: {total_reward} سکه\n👥 تعداد افراد دعوت‌شده: {referral_count}")
-
+# ============================
+# سیستم پشتیبانی
+# ============================
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش پیام پشتیبانی"""
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("📞 برای ارتباط با پشتیبانی، پیام خود را ارسال کنید.")
+    """شروع چت پشتیبانی"""
+    await update.callback_query.message.reply_text(
+        "📩 پیام خود را وارد کنید (برای لغو /cancel):"
+    )
+    return SUPPORT
+
+async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ذخیره پیام پشتیبانی"""
+    user_id = update.message.from_user.id
+    cursor.execute(
+        "INSERT INTO support (telegram_id, message) VALUES (?,?)",
+        (user_id, update.message.text)
+    )
+    conn.commit()
+    
+    for admin in ADMINS:
+        await context.bot.send_message(
+            admin,
+            f"🚨 پیام جدید پشتیبانی:\nاز: {user_id}\nمتن: {update.message.text}"
+        )
+    
+    await update.message.reply_text("✅ پیام شما ثبت شد.")
+    return ConversationHandler.END
+
+async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پاسخ ادمین به کاربر"""
+    if update.effective_user.id not in ADMINS:
+        return
+    
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ فرمت صحیح: /reply <user_id> <پیام>")
+        return
+    
+    user_id = args[0]
+    message = " ".join(args[1:])
+    
+    try:
+        await context.bot.send_message(user_id, f"📬 پاسخ پشتیبانی:\n{message}")
+        cursor.execute(
+            "INSERT INTO support (telegram_id, reply) VALUES (?,?)",
+            (user_id, message)
+        )
+        conn.commit()
+        await update.message.reply_text("✅ پاسخ ارسال شد.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ ارسال ناموفق: {e}")
 
 # ============================
-# تنظیم وب‌هوک و اجرای ربات
+# دستورات ادمین
 # ============================
+async def set_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تغییر پاداش هر دعوت"""
+    if update.effective_user.id not in ADMINS:
+        return
+    
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("⚠️ فرمت صحیح: /setreward <مقدار>")
+        return
+    
+    cursor.execute(
+        "UPDATE settings SET value=? WHERE key='reward_per_user'",
+        (args[0],)
+    )
+    conn.commit()
+    await update.message.reply_text(f"✅ پاداش هر دعوت به {args[0]} سکه تنظیم شد.")
 
+# ============================
+# بررسی دوره‌ای عضویت
+# ============================
+async def periodic_channel_check(context: ContextTypes.DEFAULT_TYPE):
+    for user in cursor.execute("SELECT telegram_id FROM users").fetchall():
+        user_id = user[0]
+        for channel in CHANNELS:
+            try:
+                member = await context.bot.get_chat_member(channel, user_id)
+                if member.status not in ["member", "creator", "administrator"]:
+                    await context.bot.send_message(
+                        user_id,
+                        "⚠️ دسترسی شما به دلیل عدم عضویت در کانال‌ها محدود شد!"
+                    )
+            except Exception as e:
+                logger.error(f"Channel check error: {e}")
+
+# ============================
+# تنظیمات اجرا
+# ============================
 app = Flask(__name__)
 
 @app.route(f"/{TOKEN}", methods=["POST"])
@@ -201,15 +276,30 @@ def webhook():
 
 if __name__ == "__main__":
     application = Application.builder().token(TOKEN).build()
+    
+    # افزودن هندلرها
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("reply", reply_to_support))
+    application.add_handler(CommandHandler("setreward", set_reward))
+    
+    application.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+        states={SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]},
+        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
+    ))
+    
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
     application.add_handler(CallbackQueryHandler(get_invite_link, pattern="^get_invite_link$"))
     application.add_handler(CallbackQueryHandler(check_balance, pattern="^check_balance$"))
-    application.add_handler(CallbackQueryHandler(support, pattern="^support$"))
 
+    # فعال‌سازی بررسی دوره‌ای
+    application.job_queue.run_repeating(periodic_channel_check, interval=86400)
+
+    # اجرای ربات
     application.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 8443)),
+        webhook_url=WEBHOOK_URL,
         url_path=TOKEN,
-        webhook_url=WEBHOOK_URL
+        secret_token="YOUR_SECRET_TOKEN"  # اختیاری
     )
