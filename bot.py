@@ -3,6 +3,7 @@ import sqlite3
 import random
 import string
 import os
+from datetime import datetime, timedelta
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -23,7 +24,7 @@ TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # جایگزین کن�
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN  # جایگزین کنید
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]  # لیست کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
-SUPPORT = range(1)
+SUPPORT, ADMIN_REPLY, SET_REWARD, SET_DAYS = range(4)
 
 # تنظیمات لاگ
 logging.basicConfig(
@@ -70,7 +71,22 @@ def init_db():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         
+        CREATE TABLE IF NOT EXISTS channel_membership (
+            user_id INTEGER,
+            channel TEXT,
+            join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            leave_date TIMESTAMP,
+            PRIMARY KEY (user_id, channel)
+        );
+        
+        CREATE TABLE IF NOT EXISTS reward_requests (
+            user_id INTEGER PRIMARY KEY,
+            amount INTEGER,
+            status TEXT DEFAULT 'pending'
+        );
+        
         INSERT OR IGNORE INTO settings (key, value) VALUES ('reward_per_user', '10');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('required_days', '30');
     """)
     conn.commit()
 
@@ -229,22 +245,163 @@ async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================
 # دستورات ادمین
 # ============================
-async def set_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تغییر پاداش هر دعوت"""
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش پنل ادمین"""
     if update.effective_user.id not in ADMINS:
         return
     
-    args = context.args
-    if not args or not args[0].isdigit():
-        await update.message.reply_text("⚠️ فرمت صحیح: /setreward <مقدار>")
+    keyboard = [
+        [InlineKeyboardButton("👥 تعداد اعضا", callback_data="members_count")],
+        [InlineKeyboardButton("📩 پیام‌های پشتیبانی", callback_data="support_messages")],
+        [InlineKeyboardButton("✅ چک کردن اعضا", callback_data="check_members")],
+        [InlineKeyboardButton("🎁 لیست پاداش‌ها", callback_data="reward_list")],
+        [InlineKeyboardButton("💰 تنظیم پاداش", callback_data="set_reward")],
+        [InlineKeyboardButton("📆 تنظیم روزهای لازم", callback_data="set_days")]
+    ]
+    
+    await update.message.reply_text(
+        "🛠 پنل مدیریت ادمین:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def members_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    count = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    await query.message.reply_text(f"👥 تعداد کل اعضا: {count} نفر")
+
+async def show_support_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    messages = cursor.execute("""
+        SELECT id, telegram_id, message 
+        FROM support 
+        WHERE reply IS NULL
+    """).fetchall()
+    
+    if not messages:
+        await query.answer("⚠️ هیچ پیام جدیدی وجود ندارد!")
         return
     
-    cursor.execute(
-        "UPDATE settings SET value=? WHERE key='reward_per_user'",
-        (args[0],)
+    for msg in messages:
+        keyboard = [[InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{msg[0]}")]]
+        await query.message.reply_text(
+            f"📩 پیام از کاربر {msg[1]}:\n{msg[2]}",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+async def reply_to_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    message_id = query.data.split("_")[1]
+    
+    context.user_data["reply_msg_id"] = message_id
+    await query.message.reply_text("پاسخ خود را وارد کنید:")
+    return ADMIN_REPLY
+
+async def process_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_id = context.user_data["reply_msg_id"]
+    reply_text = update.message.text
+    
+    msg_data = cursor.execute("""
+        SELECT telegram_id, message 
+        FROM support 
+        WHERE id=?
+    """, (message_id,)).fetchone()
+    
+    await context.bot.send_message(
+        msg_data[0], 
+        f"📬 پاسخ پشتیبانی:\n{reply_text}"
     )
+    
+    cursor.execute("""
+        UPDATE support 
+        SET reply=? 
+        WHERE id=?
+    """, (reply_text, message_id))
     conn.commit()
-    await update.message.reply_text(f"✅ پاداش هر دعوت به {args[0]} سکه تنظیم شد.")
+    
+    await update.message.reply_text("✅ پاسخ با موفقیت ارسال شد!")
+    return ConversationHandler.END
+
+async def check_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    days = int(cursor.execute("""
+        SELECT value 
+        FROM settings 
+        WHERE key='required_days'
+    """).fetchone()[0])
+    
+    active_users = cursor.execute(f"""
+        SELECT inviter_id, COUNT(*) 
+        FROM referrals 
+        WHERE julianday('now') - julianday(join_date) >= {days}
+        GROUP BY inviter_id
+    """).fetchall()
+    
+    report = "📊 گزارش اعضای فعال:\n"
+    for user in active_users:
+        report += f"👤 کاربر {user[0]}: {user[1]} عضو فعال\n"
+    
+    await query.message.reply_text(report)
+
+async def reward_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    requests = cursor.execute("""
+        SELECT u.username, r.amount 
+        FROM reward_requests r
+        JOIN users u ON r.user_id = u.telegram_id
+        WHERE r.status='pending'
+    """).fetchall()
+    
+    if not requests:
+        await query.answer("⚠️ هیچ درخواست پاداشی وجود ندارد!")
+        return
+    
+    report = "📜 لیست درخواست‌های پاداش:\n"
+    for req in requests:
+        report += f"• {req[0]}: {req[1]} سکه\n"
+    
+    await query.message.reply_text(report)
+
+async def set_reward_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.reply_text("مقدار جدید پاداش برای هر دعوت را وارد کنید:")
+    return SET_REWARD
+
+async def process_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_reward = update.message.text
+    if not new_reward.isdigit():
+        await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
+        return
+    
+    cursor.execute("""
+        UPDATE settings 
+        SET value=? 
+        WHERE key='reward_per_user'
+    """, (new_reward,))
+    conn.commit()
+    
+    await update.message.reply_text(f"✅ پاداش هر دعوت به {new_reward} سکه تنظیم شد!")
+    return ConversationHandler.END
+
+async def set_days_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.reply_text("تعداد روزهای لازم را وارد کنید:")
+    return SET_DAYS
+
+async def process_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_days = update.message.text
+    if not new_days.isdigit():
+        await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
+        return
+    
+    cursor.execute("""
+        UPDATE settings 
+        SET value=? 
+        WHERE key='required_days'
+    """, (new_days,))
+    conn.commit()
+    
+    await update.message.reply_text(f"✅ روزهای لازم به {new_days} روز تنظیم شد!")
+    return ConversationHandler.END
 
 # ============================
 # بررسی دوره‌ای عضویت
@@ -279,19 +436,49 @@ if __name__ == "__main__":
     
     # افزودن هندلرها
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
-    application.add_handler(CommandHandler("setreward", set_reward))
     
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-        states={SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]},
+        states={
+            SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
+        },
         fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
+    ))
+    
+    application.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(reply_to_message, pattern="^reply_")],
+        states={
+            ADMIN_REPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_reply)]
+        },
+        fallbacks=[]
+    ))
+    
+    application.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(set_reward_panel, pattern="^set_reward$")],
+        states={
+            SET_REWARD: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_reward)]
+        },
+        fallbacks=[]
+    ))
+    
+    application.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(set_days_panel, pattern="^set_days$")],
+        states={
+            SET_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_days)]
+        },
+        fallbacks=[]
     ))
     
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
     application.add_handler(CallbackQueryHandler(get_invite_link, pattern="^get_invite_link$"))
     application.add_handler(CallbackQueryHandler(check_balance, pattern="^check_balance$"))
-
+    application.add_handler(CallbackQueryHandler(members_count, pattern="^members_count$"))
+    application.add_handler(CallbackQueryHandler(show_support_messages, pattern="^support_messages$"))
+    application.add_handler(CallbackQueryHandler(check_members, pattern="^check_members$"))
+    application.add_handler(CallbackQueryHandler(reward_list, pattern="^reward_list$"))
+    
     # فعال‌سازی بررسی دوره‌ای
     application.job_queue.run_repeating(periodic_channel_check, interval=86400)
 
