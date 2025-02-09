@@ -20,7 +20,7 @@ from telegram.ext import (
 # ============================
 
 TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # جایگزین کنید
-WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN  # آدرس وب‌هوک
+WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN  # جایگزین کنید
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]  # لیست کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
 
@@ -57,6 +57,12 @@ def init_db():
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS support (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
@@ -65,6 +71,7 @@ def init_db():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('reward_per_user', '10')")
     conn.commit()
 
 init_db()
@@ -105,10 +112,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ تایید عضویت", callback_data="check_channels")]
     ]
     reply_markup = InlineKeyboardMarkup(join_keyboard)
-    await update.message.reply_text("لطفاً در کانال‌ها عضو شوید و سپس تأیید کنید:", reply_markup=reply_markup)
+    await update.message.reply_text("📢 لطفاً در کانال‌ها عضو شوید و سپس تأیید کنید:", reply_markup=reply_markup)
 
 async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بررسی عضویت در کانال‌ها و نمایش منوی اصلی"""
+    """بررسی عضویت در کانال‌ها"""
     query = update.callback_query
     user = query.from_user
     telegram_id = user.id
@@ -125,33 +132,56 @@ async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
     if all_joined:
-        await query.answer("عضویت شما تأیید شد!")
-        
-        main_menu = [
-            [InlineKeyboardButton("🎁 دریافت لینک دعوت", callback_data="get_referral_link")],
+        await query.answer("✅ عضویت شما تأیید شد!")
+        main_menu_keyboard = [
+            [InlineKeyboardButton("🎁 دریافت لینک دعوت", callback_data="get_invite_link")],
             [InlineKeyboardButton("💰 مشاهده موجودی", callback_data="check_balance")],
             [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
         ]
-        reply_markup = InlineKeyboardMarkup(main_menu)
+        reply_markup = InlineKeyboardMarkup(main_menu_keyboard)
 
         await query.message.reply_text(
-            "✅ شما در کانال‌ها عضو شدید. حالا می‌توانید از ربات استفاده کنید.", 
+            "✅ شما در کانال‌ها عضو شدید. حالا می‌توانید از ربات استفاده کنید.",
             reply_markup=reply_markup
         )
     else:
-        await query.answer("شما هنوز در کانال‌ها عضو نشده‌اید!", show_alert=True)
+        await query.answer("❌ شما هنوز در کانال‌ها عضو نشده‌اید!", show_alert=True)
 
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پنل مدیریت برای ادمین‌ها"""
-    if update.message.from_user.id in ADMINS:
-        keyboard = [
-            [InlineKeyboardButton("👥 مشاهده کاربران", callback_data="admin_users")],
-            [InlineKeyboardButton("📩 درخواست‌های پشتیبانی", callback_data="admin_support")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("📊 پنل مدیریت:", reply_markup=reply_markup)
+async def get_invite_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ارسال لینک دعوت برای کاربر"""
+    query = update.callback_query
+    telegram_id = query.from_user.id
+
+    cursor.execute("SELECT referral_code FROM users WHERE telegram_id=?", (telegram_id,))
+    result = cursor.fetchone()
+    if result:
+        referral_code = result[0]
+        invite_link = f"https://t.me/{context.bot.username}?start={referral_code}"
+        await query.answer()
+        await query.message.reply_text(f"🎁 لینک دعوت شما:\n{invite_link}")
     else:
-        await update.message.reply_text("⛔ شما دسترسی ندارید!")
+        await query.answer("⛔ خطا در دریافت لینک دعوت!", show_alert=True)
+
+async def check_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش موجودی کاربر"""
+    query = update.callback_query
+    telegram_id = query.from_user.id
+
+    cursor.execute("SELECT COUNT(*) FROM referrals WHERE inviter_id=?", (telegram_id,))
+    referral_count = cursor.fetchone()[0]
+
+    cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'")
+    reward_per_user = int(cursor.fetchone()[0])
+    total_reward = referral_count * reward_per_user
+
+    await query.answer()
+    await query.message.reply_text(f"💰 موجودی شما: {total_reward} سکه\n👥 تعداد افراد دعوت‌شده: {referral_count}")
+
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش پیام پشتیبانی"""
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("📞 برای ارتباط با پشتیبانی، پیام خود را ارسال کنید.")
 
 # ============================
 # تنظیم وب‌هوک و اجرای ربات
@@ -168,9 +198,10 @@ def webhook():
 if __name__ == "__main__":
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
-    application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
+    application.add_handler(CallbackQueryHandler(get_invite_link, pattern="^get_invite_link$"))
+    application.add_handler(CallbackQueryHandler(check_balance, pattern="^check_balance$"))
+    application.add_handler(CallbackQueryHandler(support, pattern="^support$"))
 
     application.run_webhook(
         listen="0.0.0.0",
