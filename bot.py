@@ -154,13 +154,17 @@ async def get_invite_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cursor.execute("SELECT referral_code FROM users WHERE telegram_id=?", (telegram_id,))
     result = cursor.fetchone()
+
     if result:
         referral_code = result[0]
-        invite_link = f"https://t.me/{context.bot.username}?start={referral_code}"
+        bot_info = await context.bot.get_me()  # دریافت اطلاعات ربات
+        bot_username = bot_info.username  # استخراج نام کاربری ربات
+        invite_link = f"https://t.me/{bot_username}?start={referral_code}"
         await query.answer()
         await query.message.reply_text(f"🎁 لینک دعوت شما:\n{invite_link}")
     else:
         await query.answer("⛔ خطا در دریافت لینک دعوت!", show_alert=True)
+
 
 async def check_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """نمایش موجودی کاربر"""
