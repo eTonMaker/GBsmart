@@ -19,7 +19,7 @@ from telegram.ext import (
 # تنظیمات
 # ============================
 
-TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"  # توکن ربات تلگرام
+TOKEN = "توکن_ربات_تلگرام_اینجا"  # جایگزین کنید
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN  # آدرس وب‌هوک
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]  # لیست کانال‌ها
 ADMINS = [992366512]  # شناسه ادمین‌ها
@@ -57,12 +57,6 @@ def init_db():
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS support (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
@@ -71,7 +65,6 @@ def init_db():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('reward_per_user', '10')")
     conn.commit()
 
 init_db()
@@ -109,13 +102,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     join_keyboard = [
         [InlineKeyboardButton("عضویت در کانال 1", url=f"https://t.me/{CHANNELS[0].lstrip('@')}")],
         [InlineKeyboardButton("عضویت در کانال 2", url=f"https://t.me/{CHANNELS[1].lstrip('@')}")],
-        [InlineKeyboardButton("تایید عضویت", callback_data="check_channels")]
+        [InlineKeyboardButton("✅ تایید عضویت", callback_data="check_channels")]
     ]
     reply_markup = InlineKeyboardMarkup(join_keyboard)
     await update.message.reply_text("لطفاً در کانال‌ها عضو شوید و سپس تأیید کنید:", reply_markup=reply_markup)
 
 async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بررسی عضویت در کانال‌ها"""
+    """بررسی عضویت در کانال‌ها و نمایش منوی اصلی"""
     query = update.callback_query
     user = query.from_user
     telegram_id = user.id
@@ -133,7 +126,18 @@ async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if all_joined:
         await query.answer("عضویت شما تأیید شد!")
-        await query.message.reply_text("✅ شما در کانال‌ها عضو شدید. حالا می‌توانید از ربات استفاده کنید.")
+        
+        main_menu = [
+            [InlineKeyboardButton("🎁 دریافت لینک دعوت", callback_data="get_referral_link")],
+            [InlineKeyboardButton("💰 مشاهده موجودی", callback_data="check_balance")],
+            [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
+        ]
+        reply_markup = InlineKeyboardMarkup(main_menu)
+
+        await query.message.reply_text(
+            "✅ شما در کانال‌ها عضو شدید. حالا می‌توانید از ربات استفاده کنید.", 
+            reply_markup=reply_markup
+        )
     else:
         await query.answer("شما هنوز در کانال‌ها عضو نشده‌اید!", show_alert=True)
 
@@ -141,32 +145,13 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """پنل مدیریت برای ادمین‌ها"""
     if update.message.from_user.id in ADMINS:
         keyboard = [
-            [InlineKeyboardButton("مشاهده کاربران", callback_data="admin_users")],
-            [InlineKeyboardButton("مشاهده درخواست‌های پشتیبانی", callback_data="admin_support")]
+            [InlineKeyboardButton("👥 مشاهده کاربران", callback_data="admin_users")],
+            [InlineKeyboardButton("📩 درخواست‌های پشتیبانی", callback_data="admin_support")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("پنل مدیریت:", reply_markup=reply_markup)
+        await update.message.reply_text("📊 پنل مدیریت:", reply_markup=reply_markup)
     else:
         await update.message.reply_text("⛔ شما دسترسی ندارید!")
-
-async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """مشاهده تعداد کاربران برای ادمین‌ها"""
-    query = update.callback_query
-    cursor.execute("SELECT COUNT(*) FROM users")
-    user_count = cursor.fetchone()[0]
-    await query.answer()
-    await query.message.reply_text(f"👥 تعداد کل کاربران: {user_count}")
-
-async def admin_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """مشاهده درخواست‌های پشتیبانی"""
-    query = update.callback_query
-    cursor.execute("SELECT telegram_id, message FROM support ORDER BY timestamp DESC LIMIT 5")
-    messages = cursor.fetchall()
-    text = "📩 آخرین درخواست‌های پشتیبانی:\n\n"
-    for msg in messages:
-        text += f"👤 کاربر {msg[0]}:\n📝 {msg[1]}\n\n"
-    await query.answer()
-    await query.message.reply_text(text if messages else "هیچ درخواست جدیدی وجود ندارد.")
 
 # ============================
 # تنظیم وب‌هوک و اجرای ربات
@@ -185,8 +170,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
-    application.add_handler(CallbackQueryHandler(admin_users, pattern="^admin_users$"))
-    application.add_handler(CallbackQueryHandler(admin_support, pattern="^admin_support$"))
+    application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
 
     application.run_webhook(
         listen="0.0.0.0",
