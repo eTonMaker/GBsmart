@@ -20,8 +20,8 @@ from telegram.ext import (
 # ============================
 # تنظیمات
 # ============================
-TOKEN = "YOUR_BOT_TOKEN"
-WEBHOOK_URL = "YOUR_WEBHOOK_URL" + TOKEN
+TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"
+WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]
 ADMINS = [992366512]
 SUPPORT, WALLET_ADDRESS, ADMIN_REPLY, SET_REWARD, SET_DAYS = range(5)
