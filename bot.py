@@ -223,7 +223,35 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ============================
-# پنل ادمین (با ساختار قبلی + دکمه‌های جدید)
+# سیستم پشتیبانی
+# ============================
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع چت پشتیبانی"""
+    await update.callback_query.message.reply_text(
+        "📩 پیام خود را وارد کنید (برای لغو /cancel):"
+    )
+    return SUPPORT
+
+async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ذخیره پیام پشتیبانی"""
+    user_id = update.message.from_user.id
+    cursor.execute(
+        "INSERT INTO support (telegram_id, message) VALUES (?,?)",
+        (user_id, update.message.text)
+    )
+    conn.commit()
+    
+    for admin in ADMINS:
+        await context.bot.send_message(
+            admin,
+            f"🚨 پیام جدید پشتیبانی از کاربر {user_id}:\n{update.message.text}"
+        )
+    
+    await update.message.reply_text("✅ پیام شما ثبت شد.")
+    return ConversationHandler.END
+
+# ============================
+# پنل ادمین
 # ============================
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
@@ -236,26 +264,88 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🎁 لیست پاداش‌ها", callback_data="reward_list")],
         [InlineKeyboardButton("💰 تنظیم پاداش", callback_data="set_reward"),
          InlineKeyboardButton("📆 تنظیم روزهای لازم", callback_data="set_days")],
-        [InlineKeyboardButton("📊 آمار دعوت‌ها", callback_data="referral_stats")]  # دکمه جدید
+        [InlineKeyboardButton("📊 آمار دعوت‌ها", callback_data="referral_stats")]
     ]
     
     await update.message.reply_text(
         "🛠 پنل مدیریت ادمین:",
         reply_markup=InlineKeyboardMarkup(keyboard))
 
+async def members_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    count = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    await query.message.reply_text(f"👥 تعداد کل اعضا: {count} نفر")
+
+async def check_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
+    active_users = cursor.execute(f"""
+        SELECT inviter_id, COUNT(*) 
+        FROM referrals 
+        WHERE julianday('now') - julianday(join_date) >= {days}
+        GROUP BY inviter_id
+    """).fetchall()
+    
+    report = "📊 گزارش اعضای فعال:\n"
+    for user in active_users:
+        report += f"👤 کاربر {user[0]}: {user[1]} عضو فعال\n"
+    await query.message.reply_text(report)
+
+async def reward_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    requests = cursor.execute("""
+        SELECT u.username, r.amount 
+        FROM reward_requests r
+        JOIN users u ON r.user_id = u.telegram_id
+        WHERE r.status='pending'
+    """).fetchall()
+    
+    if not requests:
+        await query.answer("⚠️ هیچ درخواست پاداشی وجود ندارد!")
+        return
+    
+    report = "📜 لیست درخواست‌های پاداش:\n"
+    for req in requests:
+        report += f"• {req[0]}: {req[1]} سکه\n"
+    await query.message.reply_text(report)
+
+async def set_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.reply_text("مقدار جدید پاداش برای هر دعوت را وارد کنید:")
+    return SET_REWARD
+
+async def process_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_reward = update.message.text
+    if not new_reward.isdigit():
+        await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
+        return
+    
+    cursor.execute("UPDATE settings SET value=? WHERE key='reward_per_user'", (new_reward,))
+    conn.commit()
+    await update.message.reply_text(f"✅ پاداش هر دعوت به {new_reward} سکه تنظیم شد!")
+    return ConversationHandler.END
+
+async def set_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.reply_text("تعداد روزهای لازم را وارد کنید:")
+    return SET_DAYS
+
+async def process_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_days = update.message.text
+    if not new_days.isdigit():
+        await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
+        return
+    
+    cursor.execute("UPDATE settings SET value=? WHERE key='required_days'", (new_days,))
+    conn.commit()
+    await update.message.reply_text(f"✅ روزهای لازم به {new_days} روز تنظیم شد!")
+    return ConversationHandler.END
+
 async def referral_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    active_users = cursor.execute("""
-        SELECT COUNT(*) 
-        FROM referrals 
-        WHERE julianday('now') - julianday(join_date) >= 30
-    """).fetchone()[0]
-    
-    await query.message.reply_text(
-        f"📊 آمار کلی:\n\n"
-        f"• کل کاربران: {total_users}\n"
-        f"• کاربران فعال (30+ روز): {active_users}")
+    active_users = cursor.execute("SELECT COUNT(*) FROM referrals WHERE julianday('now') - julianday(join_date) >= 30").fetchone()[0]
+    await query.message.reply_text(f"📊 آمار کلی:\n• کل کاربران: {total_users}\n• کاربران فعال (30+ روز): {active_users}")
 
 # ============================
 # اجرای ربات
@@ -291,6 +381,11 @@ if __name__ == "__main__":
     application.add_handler(CallbackQueryHandler(referral_list, pattern="^referral_list$"))
     application.add_handler(CallbackQueryHandler(user_reward, pattern="^user_reward$"))
     application.add_handler(CallbackQueryHandler(referral_stats, pattern="^referral_stats$"))
+    application.add_handler(CallbackQueryHandler(members_count, pattern="^members_count$"))
+    application.add_handler(CallbackQueryHandler(check_members, pattern="^check_members$"))
+    application.add_handler(CallbackQueryHandler(reward_list, pattern="^reward_list$"))
+    application.add_handler(CallbackQueryHandler(set_reward, pattern="^set_reward$"))
+    application.add_handler(CallbackQueryHandler(set_days, pattern="^set_days$"))
     
     application.run_webhook(
         listen="0.0.0.0",
