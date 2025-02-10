@@ -109,6 +109,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📢 لطفاً در کانال‌ها عضو شوید و سپس تأیید کنید:",
         reply_markup=InlineKeyboardMarkup(keyboard)
+    )
     
 async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
