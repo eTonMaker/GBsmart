@@ -223,22 +223,27 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ============================
-# سیستم پشتیبانی
+# سیستم پشتیبانی (اضافه شده)
 # ============================
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع چت پشتیبانی"""
+    await update.callback_query.message.reply_text(
+        "📩 پیام خود را وارد کنید (برای لغو /cancel):"
+    )
+    return SUPPORT
+
 async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ذخیره پیام پشتیبانی با مدیریت خطا"""
     try:
         user_id = update.message.from_user.id
         message_text = update.message.text
         
-        # ذخیره در دیتابیس
         cursor.execute(
             "INSERT INTO support (telegram_id, message) VALUES (?,?)",
             (user_id, message_text)
         )
         conn.commit()
         
-        # ارسال پیام به ادمین‌ها
         for admin_id in ADMINS:
             try:
                 await context.bot.send_message(
@@ -248,10 +253,7 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"خطا در ارسال پیام به ادمین {admin_id}: {e}")
         
-        # ارسال تأییدیه به کاربر
-        await update.message.reply_text(
-            "✅ پیام شما با موفقیت ثبت شد. پشتیبان‌ها به زودی پاسخ خواهند داد."
-        )
+        await update.message.reply_text("✅ پیام شما با موفقیت ثبت شد.")
         
     except Exception as e:
         logger.error(f"خطای کلی در پردازش پیام پشتیبانی: {e}")
@@ -374,19 +376,19 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("admin", admin_panel))
     
     application.add_handler(ConversationHandler(
-    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-    states={
-        SUPPORT: [
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND, 
-                support_message
-            )
-        ]
-    },
-    fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
-    per_message=True,  # رفع هشدار PTB
-    per_user=True      # مدیریت بهتر مکالمات
-))
+        entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+        states={
+            SUPPORT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, 
+                    support_message
+                )
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
+        per_message=True,
+        per_user=True
+    ))
     
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
