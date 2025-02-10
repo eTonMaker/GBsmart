@@ -367,13 +367,15 @@ if __name__ == "__main__":
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(support, pattern="^support$")],
         states={SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]},
-        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
+        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
+        per_message=True
     ))
     
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
         states={WALLET_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_wallet)]},
-        fallbacks=[]
+        fallbacks=[],
+        per_message=True
     ))
     
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
