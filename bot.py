@@ -251,6 +251,7 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(
             "INSERT INTO support (telegram_id, message) VALUES (?,?)",
             (user_id, message_text)
+        )
         conn.commit()
         
         # ارسال به ادمین‌ها
