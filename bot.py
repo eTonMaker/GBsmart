@@ -254,25 +254,68 @@ async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """پاسخ ادمین به کاربر"""
     if update.effective_user.id not in ADMINS:
         return
+# ============================
+# سیستم پشتیبانی (اصلاح نهایی)
+# ============================
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع چت پشتیبانی"""
+    try:
+        # حذف پیام قبلی برای جلوگیری از تداخل
+        await context.bot.delete_message(
+            chat_id=update.callback_query.message.chat_id,
+            message_id=update.callback_query.message.message_id
+        )
+    except Exception as e:
+        logger.error(f"خطا در حذف پیام: {e}")
     
-    args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("⚠️ فرمت صحیح: /reply <user_id> <پیام>")
-        return
-    
-    user_id = args[0]
-    message = " ".join(args[1:])
+    await context.bot.send_message(
+        chat_id=update.callback_query.from_user.id,
+        text="📩 لطفاً پیام خود را وارد کنید:\nبرای لغو از دستور /cancel استفاده کنید."
+    )
+    return SUPPORT
+
+async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پردازش پیام پشتیبانی"""
+    user_id = update.message.from_user.id
+    message_text = update.message.text
     
     try:
-        await context.bot.send_message(user_id, f"📬 پاسخ پشتیبانی:\n{message}")
+        # ذخیره در دیتابیس
         cursor.execute(
-            "INSERT INTO support (telegram_id, reply) VALUES (?,?)",
-            (user_id, message)
+            "INSERT INTO support (telegram_id, message) VALUES (?,?)",
+            (user_id, message_text)
         )
         conn.commit()
-        await update.message.reply_text("✅ پاسخ ارسال شد.")
+        
+        # ارسال پیام به ادمین‌ها با اطلاع‌رسانی دقیق
+        for admin_id in ADMINS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"🚨 **پیام جدید پشتیبانی**\n"
+                         f"▫️ کاربر: [{user_id}](tg://user?id={user_id})\n"
+                         f"▫️ متن پیام:\n{message_text}",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"خطا در ارسال به ادمین {admin_id}: {str(e)}")
+        
+        # ارسال تأییدیه به کاربر با قالب‌بندی بهتر
+        await update.message.reply_text(
+            "✅ *پیام شما با موفقیت ثبت شد!*\n"
+            "🕒 زمان پاسخگویی معمول: ۲۴ ساعت کاری",
+            parse_mode="Markdown"
+        )
+        
+    except sqlite3.Error as e:
+        logger.error(f"خطای دیتابیس: {str(e)}")
+        await update.message.reply_text("⚠️ خطای سیستمی! لطفاً مجدداً تلاش کنید.")
     except Exception as e:
-        await update.message.reply_text(f"❌ ارسال ناموفق: {e}")
+        logger.error(f"خطای کلی: {str(e)}")
+        await update.message.reply_text("⚠️ خطای ناشناخته! لطفاً با ادمین تماس بگیرید.")
+    
+    return ConversationHandler.END
+
 
 # ============================
 # پنل ادمین (بدون تغییر)
@@ -390,13 +433,22 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("reply", reply_to_support))
     
     application.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-        states={
-            SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
-        },
-        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
-        per_message=True
-    ))
+    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+    states={
+        SUPPORT: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                support_message
+            )
+        ]
+    },
+    fallbacks=[
+        CommandHandler("cancel", lambda u, c: ConversationHandler.END)
+    ],
+    per_message=True,
+    per_user=True,
+    conversation_timeout=300  # 5 دقیقه زمان انتظار
+))
     
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
