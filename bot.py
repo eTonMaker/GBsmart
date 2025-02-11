@@ -254,6 +254,25 @@ async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """پاسخ ادمین به کاربر"""
     if update.effective_user.id not in ADMINS:
         return
+    
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ فرمت صحیح: /reply <user_id> <پیام>")
+        return
+    
+    user_id = args[0]
+    message = " ".join(args[1:])
+    
+    try:
+        await context.bot.send_message(user_id, f"📬 پاسخ پشتیبانی:\n{message}")
+        cursor.execute(
+            "INSERT INTO support (telegram_id, reply) VALUES (?,?)",
+            (user_id, message)
+        )
+        conn.commit()
+        await update.message.reply_text("✅ پاسخ ارسال شد.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ ارسال ناموفق: {e}")
 # ============================
 # سیستم پشتیبانی (اصلاح نهایی)
 # ============================
@@ -423,16 +442,11 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
     
-    application.add_handler(ConversationHandler(
-    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-    states={
-        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
-    },
-    fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
-    per_message=True,
-    per_user=True,
-    conversation_timeout=300
-))
+     application.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+        states={SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]},
+        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
+    ))
     
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
