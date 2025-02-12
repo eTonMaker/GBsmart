@@ -274,6 +274,7 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(
             "INSERT INTO support (telegram_id, message) VALUES (?,?)",
             (user_id, message_text)
+        )
         conn.commit()
         support_id = cursor.lastrowid
         
@@ -479,10 +480,10 @@ if __name__ == "__main__":
     application.add_handler(support_conv)
     application.add_handler(admin_reply_conv)
     
-    support_conv = ConversationHandler(
+support_conv = ConversationHandler(
     entry_points=[CallbackQueryHandler(support, pattern="^support$")],
     states={
-        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)],
+        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
     },
     fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
     per_user=True
