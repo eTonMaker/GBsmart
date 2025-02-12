@@ -352,7 +352,6 @@ async def process_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     return ConversationHandler.END
 
-
 # ============================
 # پاسخ ادمین به پشتیبانی
 # ============================
@@ -461,6 +460,28 @@ async def referral_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(f"📊 آمار کلی:\n• کل کاربران: {total_users}\n• کاربران فعال (30+ روز): {active_users}")
 
 # ============================
+# تعریف ConversationHandlerها
+# (تعریف‌ها قبل از بلاک اصلی قرار می‌گیرند)
+# ============================
+support_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+    states={
+        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
+    },
+    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
+    per_user=True
+)
+
+admin_reply_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(admin_reply, pattern="^reply_")],
+    states={
+        ADMIN_REPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_admin_reply)]
+    },
+    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
+    per_user=True
+)
+
+# ============================
 # اجرای ربات
 # ============================
 app = Flask(__name__)
@@ -480,32 +501,12 @@ if __name__ == "__main__":
     application.add_handler(support_conv)
     application.add_handler(admin_reply_conv)
     
-support_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-    states={
-        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    per_user=True
-)
-
-admin_reply_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(admin_reply, pattern="^reply_")],
-    states={
-        ADMIN_REPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_admin_reply)]
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    per_user=True
-)
-    
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
         states={WALLET_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_wallet)]},
         fallbacks=[],
         per_message=True
     ))
-
-
     
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
     application.add_handler(CallbackQueryHandler(get_invite_link, pattern="^get_invite_link$"))
