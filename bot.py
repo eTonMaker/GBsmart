@@ -420,16 +420,15 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
     
-     application.add_handler(ConversationHandler(
-    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-    states={
-        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
-    },
-    fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
-    per_message=True,
-    per_user=True,
-    conversation_timeout=300
-))
+    # ░▒▓ اصلاح تو رفتگی ▓▒░
+    application.add_handler(ConversationHandler(  # خط 423
+        entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+        states={
+            SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
+        },
+        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
+        per_message=True
+    ))
     
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
