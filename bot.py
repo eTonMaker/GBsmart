@@ -22,13 +22,17 @@ TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]
 ADMINS = [992366512]
-SUPPORT, WALLET_ADDRESS, ADMIN_REPLY, SET_REWARD, SET_DAYS = range(5)
+
+# تعریف حالت‌های مکالمه
+# برای بخش پشتیبانی، دریافت کیف پول، پاسخ ادمین، تنظیم پاداش، تنظیم روزها و دریافت پاداش جدید
+SUPPORT, WALLET_ADDRESS, ADMIN_REPLY, SET_REWARD, SET_DAYS, RECEIVE_REWARD = range(6)
 
 # متغیرهای دکمه (متنی)
 BTN_VERIFY = "✅ تایید عضویت"
 BTN_INVITE = "🎁 دریافت لینک دعوت"
 BTN_REFERRAL_LIST = "📊 لیست دعوت شدگان"
 BTN_REWARD = "💰 پاداش شما"
+BTN_RECEIVE_REWARD = "💳 دریافت پاداش"
 BTN_SUPPORT = "📞 پشتیبانی"
 
 # ============================
@@ -165,6 +169,9 @@ async def referral_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• دعوت شدگان فعال ({days}+ روز): {active_ref}"
     )
 
+# ============================
+# بخش پاداش کاربری (با دکمه دریافت پاداش جدید)
+# ============================
 async def user_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
@@ -176,10 +183,18 @@ async def user_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """, (user_id,)).fetchone()[0]
     reward_per = int(cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'").fetchone()[0])
     total_reward = active_ref * reward_per
-    # نمایش مبلغ پاداش و درخواست آدرس کیف پول
+    # ارسال کیبورد با دکمه "💳 دریافت پاداش"
+    reply_kb = [[BTN_RECEIVE_REWARD]]
+    markup = ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text(
-        f"💰 پاداش شما:\n{total_reward} سکه\n\nبرای دریافت پاداش، لطفاً آدرس کیف پول خود را ارسال کنید:"
+         f"💰 پاداش شما:\n{total_reward} سکه\n\nبرای دریافت پاداش، لطفاً دکمه زیر را فشار دهید:",
+         reply_markup=markup
     )
+    return RECEIVE_REWARD
+
+async def receive_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # پس از فشردن دکمه "💳 دریافت پاداش" درخواست آدرس کیف پول ارسال می‌شود
+    await update.message.reply_text("لطفاً آدرس کیف پول خود را ارسال کنید:")
     return WALLET_ADDRESS
 
 async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -197,8 +212,11 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("منوی اصلی:", reply_markup=markup)
     return ConversationHandler.END
 
+# ============================
+# بخش پشتیبانی
+# ============================
 async def support_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع مکالمه پشتیبانی بعد از فشردن دکمه پشتیبانی"""
+    """شروع مکالمه پشتیبانی پس از فشردن دکمه پشتیبانی"""
     user_id = update.message.from_user.id
     # (اختیاری) بررسی عضویت در کانال‌ها
     all_joined = True
@@ -224,7 +242,7 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("INSERT INTO support (telegram_id, message) VALUES (?,?)", (user_id, message_text))
         conn.commit()
         support_id = cursor.lastrowid
-        # ارسال پیام به ادمین‌ها جهت اطلاع‌رسانی (در این نسخه به صورت ساده)
+        # ارسال پیام به ادمین‌ها جهت اطلاع‌رسانی (به صورت ساده)
         for admin in ADMINS:
             await context.bot.send_message(
                 admin,
@@ -257,8 +275,6 @@ async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("قابلیت پاسخ به پشتیبانی در حال حاضر پیاده‌سازی نشده است.")
 
-# (سایر توابع پنل ادمین مانند members_count، check_members، reward_list، set_reward، process_reward، set_days، process_days، referral_stats نیز به همین صورت می‌توانند با MessageHandler و ReplyKeyboardMarkup پیاده‌سازی شوند)
-
 # ============================
 # اجرای ربات
 # ============================
@@ -282,6 +298,7 @@ if __name__ == "__main__":
     reward_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(f"^{BTN_REWARD}$"), user_reward)],
         states={
+            RECEIVE_REWARD: [MessageHandler(filters.Regex(f"^{BTN_RECEIVE_REWARD}$"), receive_reward)],
             WALLET_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_wallet)]
         },
         fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
