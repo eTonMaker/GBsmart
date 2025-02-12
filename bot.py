@@ -231,17 +231,36 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """شروع چت پشتیبانی"""
-    await update.callback_query.answer()
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    # بررسی عضویت در کانال‌ها
+    all_joined = True
+    for channel in CHANNELS:
+        try:
+            member = await context.bot.get_chat_member(channel, user_id)
+            if member.status not in ["member", "creator", "administrator"]:
+                all_joined = False
+                break
+        except Exception as e:
+            logger.error(f"خطای بررسی کانال: {e}")
+            all_joined = False
+
+    if not all_joined:
+        await query.edit_message_text("❌ برای استفاده از پشتیبانی باید در کانال‌ها عضو باشید!")
+        return ConversationHandler.END
+
     try:
         await context.bot.delete_message(
-            chat_id=update.callback_query.message.chat_id,
-            message_id=update.callback_query.message.message_id
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id
         )
     except Exception as e:
         logger.error(f"خطا در حذف پیام: {e}")
     
     await context.bot.send_message(
-        chat_id=update.callback_query.from_user.id,
+        chat_id=user_id,
         text="📩 لطفاً پیام خود را وارد کنید:\nبرای لغو از دستور /cancel استفاده کنید."
     )
     return SUPPORT
@@ -255,22 +274,83 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(
             "INSERT INTO support (telegram_id, message) VALUES (?,?)",
             (user_id, message_text)
-        )
         conn.commit()
+        support_id = cursor.lastrowid
         
         for admin in ADMINS:
+            keyboard = [[InlineKeyboardButton("📩 پاسخ به این پیام", callback_data=f"reply_{support_id}")]]
             await context.bot.send_message(
                 admin,
-                f"🚨 پیام جدید پشتیبانی:\nاز: {user_id}\nمتن: {message_text}"
+                f"🚨 پیام جدید پشتیبانی (ID: {support_id}):\n"
+                f"از کاربر: {user_id}\n"
+                f"متن پیام: {message_text}",
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
         
-        await update.message.reply_text("✅ پیام شما ثبت شد.")
+        await update.message.reply_text("✅ پیام شما ثبت شد. پاسخ شما در اسرع وقت ارسال خواهد شد.")
     
     except Exception as e:
         logger.error(f"خطا در ثبت پیام: {str(e)}")
-        await update.message.reply_text("⛔ خطایی رخ داد!")
+        await update.message.reply_text("⛔ خطایی در ثبت پیام رخ داد!")
     
     return ConversationHandler.END
+
+async def admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع فرایند پاسخ ادمین"""
+    query = update.callback_query
+    await query.answer()
+    support_id = query.data.split("_")[1]
+    
+    context.user_data['support_id'] = support_id
+    await query.message.reply_text("لطفاً پاسخ خود را وارد کنید:")
+    return ADMIN_REPLY
+
+async def process_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پردازش پاسخ ادمین"""
+    admin_id = update.message.from_user.id
+    reply_text = update.message.text
+    support_id = context.user_data.get('support_id')
+    
+    if not support_id:
+        await update.message.reply_text("⚠️ خطایی در پردازش پاسخ رخ داد!")
+        return ConversationHandler.END
+    
+    try:
+        # دریافت اطلاعات کاربر
+        cursor.execute(
+            "SELECT telegram_id, message FROM support WHERE id=?",
+            (support_id,)
+        )
+        result = cursor.fetchone()
+        
+        if not result:
+            await update.message.reply_text("⚠️ پیام پشتیبانی یافت نشد!")
+            return ConversationHandler.END
+        
+        user_id, original_message = result
+        
+        # ذخیره پاسخ در دیتابیس
+        cursor.execute(
+            "UPDATE support SET reply=? WHERE id=?",
+            (reply_text, support_id)
+        )
+        conn.commit()
+        
+        # ارسال پاسخ به کاربر
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"📬 پاسخ پشتیبانی به پیام شما:\n"
+                 f"📝 پیام شما: {original_message}\n\n"
+                 f"📤 پاسخ ادمین: {reply_text}"
+        )
+        await update.message.reply_text("✅ پاسخ با موفقیت ارسال شد!")
+        
+    except Exception as e:
+        logger.error(f"خطا در ارسال پاسخ: {str(e)}")
+        await update.message.reply_text("⚠️ خطایی در ارسال پاسخ رخ داد!")
+    
+    return ConversationHandler.END
+
 
 # ============================
 # پاسخ ادمین به پشتیبانی
@@ -396,24 +476,26 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
+    application.add_handler(support_conv))
+    application.add_handler(admin_reply_conv))
     
-    application.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-        states={
-            SUPPORT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    support_message
-                )
-            ]
-        },
-        fallbacks=[
-            CommandHandler("cancel", lambda u, c: ConversationHandler.END)
-        ],
-        per_message=True,
-        per_user=True,
-        conversation_timeout=300  # 5 دقیقه زمان انتظار
-    ))
+    support_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
+    states={
+        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)],
+    },
+    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
+    per_user=True
+)
+
+admin_reply_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(admin_reply, pattern="^reply_")],
+    states={
+        ADMIN_REPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_admin_reply)]
+    },
+    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
+    per_user=True
+)
     
     application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
@@ -421,6 +503,8 @@ if __name__ == "__main__":
         fallbacks=[],
         per_message=True
     ))
+
+
     
     application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
     application.add_handler(CallbackQueryHandler(get_invite_link, pattern="^get_invite_link$"))
