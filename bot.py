@@ -476,8 +476,8 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
-    application.add_handler(support_conv))
-    application.add_handler(admin_reply_conv))
+    application.add_handler(support_conv)
+    application.add_handler(admin_reply_conv)
     
     support_conv = ConversationHandler(
     entry_points=[CallbackQueryHandler(support, pattern="^support$")],
