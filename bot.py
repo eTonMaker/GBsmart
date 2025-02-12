@@ -135,7 +135,8 @@ async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await query.edit_message_text(
             "✅ عضویت تأیید شد! از منوی زیر انتخاب کنید:",
-            reply_markup=InlineKeyboardMarkup(keyboard))
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     else:
         await query.answer("❌ هنوز در همه کانال‌ها عضو نشده‌اید!", show_alert=True)
 
@@ -176,7 +177,8 @@ async def referral_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(
         f"📊 لیست دعوت شدگان:\n\n"
         f"• کل دعوت شدگان: {total_ref}\n"
-        f"• دعوت شدگان فعال ({days}+ روز): {active_ref}")
+        f"• دعوت شدگان فعال ({days}+ روز): {active_ref}"
+    )
 
 async def user_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -203,7 +205,8 @@ async def user_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(
         f"💰 پاداش شما:\n{total_reward} سکه\n\n"
         "برای دریافت پاداش دکمه زیر را کلیک کنید:",
-        reply_markup=InlineKeyboardMarkup(keyboard))
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def request_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -216,21 +219,20 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     cursor.execute(
         "UPDATE users SET wallet_address=? WHERE telegram_id=?", 
-        (wallet, user_id))
+        (wallet, user_id)
+    )
     conn.commit()
     
     await update.message.reply_text("✅ درخواست شما ثبت شد!")
     return ConversationHandler.END
 
 # ============================
-# سیستم پشتیبانی (اضافه شده بدون تغییر)
+# سیستم پشتیبانی (اصلاح نهایی)
 # ============================
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """شروع چت پشتیبانی"""
-    # اضافه کردن پاسخ به callback query جهت جلوگیری از تایم‌آوت
     await update.callback_query.answer()
     try:
-        # حذف پیام قبلی برای جلوگیری از تداخل
         await context.bot.delete_message(
             chat_id=update.callback_query.message.chat_id,
             message_id=update.callback_query.message.message_id
@@ -250,54 +252,9 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
     
     try:
-        # ذخیره در دیتابیس
         cursor.execute(
             "INSERT INTO support (telegram_id, message) VALUES (?,?)",
             (user_id, message_text)
-        )
-        conn.commit()
-        
-        # ارسال پیام به ادمین‌ها با اطلاع‌رسانی دقیق
-        for admin_id in ADMINS:
-            try:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=f"🚨 **پیام جدید پشتیبانی**\n"
-                         f"▫️ کاربر: [{user_id}](tg://user?id={user_id})\n"
-                         f"▫️ متن پیام:\n{message_text}",
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                logger.error(f"خطا در ارسال به ادمین {admin_id}: {str(e)}")
-        
-        # ارسال تأییدیه به کاربر با قالب‌بندی بهتر
-        await update.message.reply_text(
-            "✅ *پیام شما با موفقیت ثبت شد!*\n"
-            "🕒 زمان پاسخگویی معمول: ۲۴ ساعت کاری",
-            parse_mode="Markdown"
-        )
-        
-    except sqlite3.Error as e:
-        logger.error(f"خطای دیتابیس: {str(e)}")
-        await update.message.reply_text("⚠️ خطای سیستمی! لطفاً مجدداً تلاش کنید.")
-    except Exception as e:
-        logger.error(f"خطای کلی: {str(e)}")
-        await update.message.reply_text("⚠️ خطای ناشناخته! لطفاً با ادمین تماس بگیرید.")
-    
-    return ConversationHandler.END
-# ============================
-# سیستم پشتیبانی (اصلاح نهایی)
-# ============================
-async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ذخیره پیام پشتیبانی"""
-    user_id = update.message.from_user.id
-    message_text = update.message.text
-    
-    try:
-        # رفع خطای پرانتز در این بخش
-        cursor.execute(
-            "INSERT INTO support (telegram_id, message) VALUES (?,?)",  # خط 283
-            (user_id, message_text)  # اضافه کردن پرانتز بسته
         )
         conn.commit()
         
@@ -314,6 +271,17 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ خطایی رخ داد!")
     
     return ConversationHandler.END
+
+# ============================
+# پاسخ ادمین به پشتیبانی
+# ============================
+async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پاسخ ادمین به پیام‌های پشتیبانی"""
+    if update.effective_user.id not in ADMINS:
+        await update.message.reply_text("شما دسترسی لازم برای این فرمان را ندارید.")
+        return
+    # در اینجا می‌توانید منطق پاسخ به پیام‌های پشتیبانی را پیاده‌سازی کنید.
+    await update.message.reply_text("قابلیت پاسخ به پشتیبانی در حال حاضر پیاده‌سازی نشده است.")
 
 # ============================
 # پنل ادمین (بدون تغییر)
@@ -334,7 +302,8 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "🛠 پنل مدیریت ادمین:",
-        reply_markup=InlineKeyboardMarkup(keyboard))
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def members_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -384,7 +353,6 @@ async def process_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not new_reward.isdigit():
         await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
         return
-    
     cursor.execute("UPDATE settings SET value=? WHERE key='reward_per_user'", (new_reward,))
     conn.commit()
     await update.message.reply_text(f"✅ پاداش هر دعوت به {new_reward} سکه تنظیم شد!")
@@ -400,7 +368,6 @@ async def process_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not new_days.isdigit():
         await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
         return
-    
     cursor.execute("UPDATE settings SET value=? WHERE key='required_days'", (new_days,))
     conn.commit()
     await update.message.reply_text(f"✅ روزهای لازم به {new_days} روز تنظیم شد!")
@@ -430,7 +397,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
     
-   application.add_handler(ConversationHandler(
+    application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(support, pattern="^support$")],
         states={
             SUPPORT: [
