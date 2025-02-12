@@ -227,13 +227,16 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """شروع چت پشتیبانی"""
+    # اضافه کردن پاسخ به callback query جهت جلوگیری از تایم‌آوت
+    await update.callback_query.answer()
     try:
+        # حذف پیام قبلی برای جلوگیری از تداخل
         await context.bot.delete_message(
             chat_id=update.callback_query.message.chat_id,
             message_id=update.callback_query.message.message_id
         )
     except Exception as e:
-        logger.error(f"خطا در حذف پیام: {str(e)}")
+        logger.error(f"خطا در حذف پیام: {e}")
     
     await context.bot.send_message(
         chat_id=update.callback_query.from_user.id,
@@ -242,7 +245,7 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return SUPPORT
 
 async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ذخیره پیام پشتیبانی"""
+    """پردازش پیام پشتیبانی"""
     user_id = update.message.from_user.id
     message_text = update.message.text
     
@@ -254,25 +257,32 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         conn.commit()
         
-        # ارسال به ادمین‌ها
+        # ارسال پیام به ادمین‌ها با اطلاع‌رسانی دقیق
         for admin_id in ADMINS:
             try:
                 await context.bot.send_message(
                     chat_id=admin_id,
-                    text=f"🚨 پیام جدید از کاربر {user_id}:\n{message_text}"
+                    text=f"🚨 **پیام جدید پشتیبانی**\n"
+                         f"▫️ کاربر: [{user_id}](tg://user?id={user_id})\n"
+                         f"▫️ متن پیام:\n{message_text}",
+                    parse_mode="Markdown"
                 )
             except Exception as e:
                 logger.error(f"خطا در ارسال به ادمین {admin_id}: {str(e)}")
         
-        # ارسال تأییدیه
-        await update.message.reply_text("✅ پیام شما ثبت شد!")
+        # ارسال تأییدیه به کاربر با قالب‌بندی بهتر
+        await update.message.reply_text(
+            "✅ *پیام شما با موفقیت ثبت شد!*\n"
+            "🕒 زمان پاسخگویی معمول: ۲۴ ساعت کاری",
+            parse_mode="Markdown"
+        )
         
     except sqlite3.Error as e:
         logger.error(f"خطای دیتابیس: {str(e)}")
-        await update.message.reply_text("⚠️ خطای سیستمی! لطفاً مجدد تلاش کنید.")
+        await update.message.reply_text("⚠️ خطای سیستمی! لطفاً مجدداً تلاش کنید.")
     except Exception as e:
         logger.error(f"خطای کلی: {str(e)}")
-        await update.message.reply_text("⛔ خطای غیرمنتظره رخ داد!")
+        await update.message.reply_text("⚠️ خطای ناشناخته! لطفاً با ادمین تماس بگیرید.")
     
     return ConversationHandler.END
 # ============================
@@ -420,14 +430,22 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
     
-    # ░▒▓ اصلاح تو رفتگی ▓▒░
-    application.add_handler(ConversationHandler(  # خط 423
+   application.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(support, pattern="^support$")],
         states={
-            SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
+            SUPPORT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    support_message
+                )
+            ]
         },
-        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)],
-        per_message=True
+        fallbacks=[
+            CommandHandler("cancel", lambda u, c: ConversationHandler.END)
+        ],
+        per_message=True,
+        per_user=True,
+        conversation_timeout=300  # 5 دقیقه زمان انتظار
     ))
     
     application.add_handler(ConversationHandler(
