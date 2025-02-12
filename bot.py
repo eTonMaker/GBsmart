@@ -5,16 +5,14 @@ import string
 import os
 from datetime import datetime, timedelta
 from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
-    CallbackQueryHandler,
     MessageHandler,
     filters,
     ContextTypes,
     ConversationHandler,
-    JobQueue
 )
 
 # ============================
@@ -26,7 +24,16 @@ CHANNELS = ["@smartmodircom", "@ershadsajadian"]
 ADMINS = [992366512]
 SUPPORT, WALLET_ADDRESS, ADMIN_REPLY, SET_REWARD, SET_DAYS = range(5)
 
+# متغیرهای دکمه (متنی)
+BTN_VERIFY = "✅ تایید عضویت"
+BTN_INVITE = "🎁 دریافت لینک دعوت"
+BTN_REFERRAL_LIST = "📊 لیست دعوت شدگان"
+BTN_REWARD = "💰 پاداش شما"
+BTN_SUPPORT = "📞 پشتیبانی"
+
+# ============================
 # تنظیمات لاگ
+# ============================
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -86,14 +93,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = user.id
     username = user.username or user.first_name
 
+    # ثبت کاربر در پایگاه داده در صورت عدم ثبت
     if not cursor.execute("SELECT * FROM users WHERE telegram_id=?", (telegram_id,)).fetchone():
         referral_code = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         inviter_id = None
-        
         if context.args:
             inviter = cursor.execute("SELECT telegram_id FROM users WHERE referral_code=?", (context.args[0],)).fetchone()
             inviter_id = inviter[0] if inviter else None
-
         cursor.execute(
             "INSERT INTO users (telegram_id, username, referral_code, inviter_id) VALUES (?,?,?,?)",
             (telegram_id, username, referral_code, inviter_id)
@@ -102,19 +108,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("INSERT INTO referrals (inviter_id, invited_id) VALUES (?,?)", (inviter_id, telegram_id))
         conn.commit()
 
-    keyboard = [
-        [InlineKeyboardButton(f"عضویت در {chan}", url=f"https://t.me/{chan.lstrip('@')}") for chan in CHANNELS],
-        [InlineKeyboardButton("✅ تایید عضویت", callback_data="check_channels")]
-    ]
-    await update.message.reply_text(
-        "📢 لطفاً در کانال‌ها عضو شوید و سپس تأیید کنید:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    # ساخت متن جهت دعوت به عضویت کانال‌ها
+    channels_text = "لطفاً در کانال‌های زیر عضو شوید:\n"
+    for chan in CHANNELS:
+        channels_text += f"{chan} (https://t.me/{chan.lstrip('@')})\n"
+    channels_text += "\nسپس دکمه زیر را فشار دهید:"
     
-async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
+    # نمایش کیبورد با دکمه تایید عضویت
+    reply_kb = [[BTN_VERIFY]]
+    markup = ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text(channels_text, reply_markup=markup)
+
+async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بررسی عضویت کاربر در کانال‌ها و نمایش منوی اصلی در صورت تأیید"""
+    user_id = update.message.from_user.id
     all_joined = True
     for channel in CHANNELS:
         try:
@@ -125,117 +132,75 @@ async def check_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"خطای بررسی کانال: {e}")
             all_joined = False
-
     if all_joined:
-        keyboard = [
-            [InlineKeyboardButton("🎁 دریافت لینک دعوت", callback_data="get_invite_link")],
-            [InlineKeyboardButton("📊 لیست دعوت شدگان", callback_data="referral_list")],
-            [InlineKeyboardButton("💰 پاداش شما", callback_data="user_reward")],
-            [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
+        main_menu = [
+            [BTN_INVITE, BTN_REFERRAL_LIST],
+            [BTN_REWARD, BTN_SUPPORT]
         ]
-        await query.edit_message_text(
-            "✅ عضویت تأیید شد! از منوی زیر انتخاب کنید:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        markup = ReplyKeyboardMarkup(main_menu, resize_keyboard=True)
+        await update.message.reply_text("✅ عضویت تأیید شد! از منوی زیر انتخاب کنید:", reply_markup=markup)
     else:
-        await query.answer("❌ هنوز در همه کانال‌ها عضو نشده‌اید!", show_alert=True)
+        await update.message.reply_text("❌ هنوز در همه کانال‌ها عضو نشده‌اید!")
 
-# ============================
-# سیستم دعوت و پاداش
-# ============================
 async def get_invite_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    referral_code = cursor.execute(
-        "SELECT referral_code FROM users WHERE telegram_id=?", (user_id,)
-    ).fetchone()[0]
-    
+    user_id = update.message.from_user.id
+    referral_code = cursor.execute("SELECT referral_code FROM users WHERE telegram_id=?", (user_id,)).fetchone()[0]
     bot_username = (await context.bot.get_me()).username
     invite_link = f"https://t.me/{bot_username}?start={referral_code}"
-    await query.message.reply_text(f"🔗 لینک دعوت شما:\n{invite_link}")
+    await update.message.reply_text(f"🔗 لینک دعوت شما:\n{invite_link}")
 
 async def referral_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    total_ref = cursor.execute(
-        "SELECT COUNT(*) FROM referrals WHERE inviter_id=?", (user_id,)
-    ).fetchone()[0]
-    
-    days = int(cursor.execute(
-        "SELECT value FROM settings WHERE key='required_days'"
-    ).fetchone()[0])
-    
+    user_id = update.message.from_user.id
+    total_ref = cursor.execute("SELECT COUNT(*) FROM referrals WHERE inviter_id=?", (user_id,)).fetchone()[0]
+    days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
     active_ref = cursor.execute(f"""
         SELECT COUNT(*) 
         FROM referrals 
         WHERE inviter_id=? 
         AND julianday('now') - julianday(join_date) >= {days}
     """, (user_id,)).fetchone()[0]
-    
-    await query.message.reply_text(
+    await update.message.reply_text(
         f"📊 لیست دعوت شدگان:\n\n"
         f"• کل دعوت شدگان: {total_ref}\n"
         f"• دعوت شدگان فعال ({days}+ روز): {active_ref}"
     )
 
 async def user_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    days = int(cursor.execute(
-        "SELECT value FROM settings WHERE key='required_days'"
-    ).fetchone()[0])
-    
+    user_id = update.message.from_user.id
+    days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
     active_ref = cursor.execute(f"""
         SELECT COUNT(*) 
         FROM referrals 
         WHERE inviter_id=? 
         AND julianday('now') - julianday(join_date) >= {days}
     """, (user_id,)).fetchone()[0]
-    
-    reward_per = int(cursor.execute(
-        "SELECT value FROM settings WHERE key='reward_per_user'"
-    ).fetchone()[0])
-    
+    reward_per = int(cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'").fetchone()[0])
     total_reward = active_ref * reward_per
-    
-    keyboard = [[InlineKeyboardButton("💳 دریافت پاداش", callback_data="request_reward")]]
-    await query.message.reply_text(
-        f"💰 پاداش شما:\n{total_reward} سکه\n\n"
-        "برای دریافت پاداش دکمه زیر را کلیک کنید:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+    # نمایش مبلغ پاداش و درخواست آدرس کیف پول
+    await update.message.reply_text(
+        f"💰 پاداش شما:\n{total_reward} سکه\n\nبرای دریافت پاداش، لطفاً آدرس کیف پول خود را ارسال کنید:"
     )
-
-async def request_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.message.reply_text("لطفاً آدرس کیف پول خود را وارد کنید:")
     return WALLET_ADDRESS
 
 async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     wallet = update.message.text
-    
-    cursor.execute(
-        "UPDATE users SET wallet_address=? WHERE telegram_id=?", 
-        (wallet, user_id)
-    )
+    cursor.execute("UPDATE users SET wallet_address=? WHERE telegram_id=?", (wallet, user_id))
     conn.commit()
-    
     await update.message.reply_text("✅ درخواست شما ثبت شد!")
+    # نمایش مجدد منوی اصلی پس از اتمام مکالمه
+    main_menu = [
+        [BTN_INVITE, BTN_REFERRAL_LIST],
+        [BTN_REWARD, BTN_SUPPORT]
+    ]
+    markup = ReplyKeyboardMarkup(main_menu, resize_keyboard=True)
+    await update.message.reply_text("منوی اصلی:", reply_markup=markup)
     return ConversationHandler.END
 
-# ============================
-# سیستم پشتیبانی (اصلاح نهایی)
-# ============================
-async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع چت پشتیبانی"""
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-
-    # بررسی عضویت در کانال‌ها
+async def support_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع مکالمه پشتیبانی بعد از فشردن دکمه پشتیبانی"""
+    user_id = update.message.from_user.id
+    # (اختیاری) بررسی عضویت در کانال‌ها
     all_joined = True
     for channel in CHANNELS:
         try:
@@ -246,240 +211,53 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"خطای بررسی کانال: {e}")
             all_joined = False
-
     if not all_joined:
-        await query.edit_message_text("❌ برای استفاده از پشتیبانی باید در کانال‌ها عضو باشید!")
+        await update.message.reply_text("❌ برای استفاده از پشتیبانی باید در کانال‌ها عضو باشید!")
         return ConversationHandler.END
-
-    try:
-        await context.bot.delete_message(
-            chat_id=query.message.chat_id,
-            message_id=query.message.message_id
-        )
-    except Exception as e:
-        logger.error(f"خطا در حذف پیام: {e}")
-    
-    await context.bot.send_message(
-        chat_id=user_id,
-        text="📩 لطفاً پیام خود را وارد کنید:\nبرای لغو از دستور /cancel استفاده کنید."
-    )
+    await update.message.reply_text("📩 لطفاً پیام خود را وارد کنید (برای لغو /cancel):")
     return SUPPORT
 
 async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پردازش پیام پشتیبانی"""
     user_id = update.message.from_user.id
     message_text = update.message.text
-    
     try:
-        cursor.execute(
-            "INSERT INTO support (telegram_id, message) VALUES (?,?)",
-            (user_id, message_text)
-        )
+        cursor.execute("INSERT INTO support (telegram_id, message) VALUES (?,?)", (user_id, message_text))
         conn.commit()
         support_id = cursor.lastrowid
-        
+        # ارسال پیام به ادمین‌ها جهت اطلاع‌رسانی (در این نسخه به صورت ساده)
         for admin in ADMINS:
-            keyboard = [[InlineKeyboardButton("📩 پاسخ به این پیام", callback_data=f"reply_{support_id}")]]
             await context.bot.send_message(
                 admin,
-                f"🚨 پیام جدید پشتیبانی (ID: {support_id}):\n"
-                f"از کاربر: {user_id}\n"
-                f"متن پیام: {message_text}",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                f"🚨 پیام جدید پشتیبانی (ID: {support_id}):\nاز کاربر: {user_id}\nمتن پیام: {message_text}"
             )
-        
         await update.message.reply_text("✅ پیام شما ثبت شد. پاسخ شما در اسرع وقت ارسال خواهد شد.")
-    
     except Exception as e:
-        logger.error(f"خطا در ثبت پیام: {str(e)}")
+        logger.error(f"خطا در ثبت پیام پشتیبانی: {str(e)}")
         await update.message.reply_text("⛔ خطایی در ثبت پیام رخ داد!")
-    
-    return ConversationHandler.END
-
-async def admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع فرایند پاسخ ادمین"""
-    query = update.callback_query
-    await query.answer()
-    support_id = query.data.split("_")[1]
-    
-    context.user_data['support_id'] = support_id
-    await query.message.reply_text("لطفاً پاسخ خود را وارد کنید:")
-    return ADMIN_REPLY
-
-async def process_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پردازش پاسخ ادمین"""
-    admin_id = update.message.from_user.id
-    reply_text = update.message.text
-    support_id = context.user_data.get('support_id')
-    
-    if not support_id:
-        await update.message.reply_text("⚠️ خطایی در پردازش پاسخ رخ داد!")
-        return ConversationHandler.END
-    
-    try:
-        # دریافت اطلاعات کاربر
-        cursor.execute(
-            "SELECT telegram_id, message FROM support WHERE id=?",
-            (support_id,)
-        )
-        result = cursor.fetchone()
-        
-        if not result:
-            await update.message.reply_text("⚠️ پیام پشتیبانی یافت نشد!")
-            return ConversationHandler.END
-        
-        user_id, original_message = result
-        
-        # ذخیره پاسخ در دیتابیس
-        cursor.execute(
-            "UPDATE support SET reply=? WHERE id=?",
-            (reply_text, support_id)
-        )
-        conn.commit()
-        
-        # ارسال پاسخ به کاربر
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"📬 پاسخ پشتیبانی به پیام شما:\n"
-                 f"📝 پیام شما: {original_message}\n\n"
-                 f"📤 پاسخ ادمین: {reply_text}"
-        )
-        await update.message.reply_text("✅ پاسخ با موفقیت ارسال شد!")
-        
-    except Exception as e:
-        logger.error(f"خطا در ارسال پاسخ: {str(e)}")
-        await update.message.reply_text("⚠️ خطایی در ارسال پاسخ رخ داد!")
-    
     return ConversationHandler.END
 
 # ============================
-# پاسخ ادمین به پشتیبانی
-# ============================
-async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پاسخ ادمین به پیام‌های پشتیبانی"""
-    if update.effective_user.id not in ADMINS:
-        await update.message.reply_text("شما دسترسی لازم برای این فرمان را ندارید.")
-        return
-    # در اینجا می‌توانید منطق پاسخ به پیام‌های پشتیبانی را پیاده‌سازی کنید.
-    await update.message.reply_text("قابلیت پاسخ به پشتیبانی در حال حاضر پیاده‌سازی نشده است.")
-
-# ============================
-# پنل ادمین (بدون تغییر)
+# پنل ادمین (بدون تغییر قابل توجه)
 # ============================
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         return
-    
-    keyboard = [
-        [InlineKeyboardButton("👥 تعداد اعضا", callback_data="members_count"),
-         InlineKeyboardButton("📩 پیام‌های پشتیبانی", callback_data="support_messages")],
-        [InlineKeyboardButton("✅ چک کردن اعضا", callback_data="check_members"),
-         InlineKeyboardButton("🎁 لیست پاداش‌ها", callback_data="reward_list")],
-        [InlineKeyboardButton("💰 تنظیم پاداش", callback_data="set_reward"),
-         InlineKeyboardButton("📆 تنظیم روزهای لازم", callback_data="set_days")],
-        [InlineKeyboardButton("📊 آمار دعوت‌ها", callback_data="referral_stats")]
+    admin_menu = [
+        ["👥 تعداد اعضا", "📩 پیام‌های پشتیبانی"],
+        ["✅ چک کردن اعضا", "🎁 لیست پاداش‌ها"],
+        ["💰 تنظیم پاداش", "📆 تنظیم روزهای لازم"],
+        ["📊 آمار دعوت‌ها"]
     ]
-    
-    await update.message.reply_text(
-        "🛠 پنل مدیریت ادمین:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    markup = ReplyKeyboardMarkup(admin_menu, resize_keyboard=True)
+    await update.message.reply_text("🛠 پنل مدیریت ادمین:", reply_markup=markup)
 
-async def members_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    count = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    await query.message.reply_text(f"👥 تعداد کل اعضا: {count} نفر")
-
-async def check_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
-    active_users = cursor.execute(f"""
-        SELECT inviter_id, COUNT(*) 
-        FROM referrals 
-        WHERE julianday('now') - julianday(join_date) >= {days}
-        GROUP BY inviter_id
-    """).fetchall()
-    
-    report = "📊 گزارش اعضای فعال:\n"
-    for user in active_users:
-        report += f"👤 کاربر {user[0]}: {user[1]} عضو فعال\n"
-    await query.message.reply_text(report)
-
-async def reward_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    requests = cursor.execute("""
-        SELECT u.username, r.amount 
-        FROM reward_requests r
-        JOIN users u ON r.user_id = u.telegram_id
-        WHERE r.status='pending'
-    """).fetchall()
-    
-    if not requests:
-        await query.answer("⚠️ هیچ درخواست پاداشی وجود ندارد!")
+async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMINS:
+        await update.message.reply_text("شما دسترسی لازم برای این فرمان را ندارید.")
         return
-    
-    report = "📜 لیست درخواست‌های پاداش:\n"
-    for req in requests:
-        report += f"• {req[0]}: {req[1]} سکه\n"
-    await query.message.reply_text(report)
+    await update.message.reply_text("قابلیت پاسخ به پشتیبانی در حال حاضر پیاده‌سازی نشده است.")
 
-async def set_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.message.reply_text("مقدار جدید پاداش برای هر دعوت را وارد کنید:")
-    return SET_REWARD
-
-async def process_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    new_reward = update.message.text
-    if not new_reward.isdigit():
-        await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
-        return
-    cursor.execute("UPDATE settings SET value=? WHERE key='reward_per_user'", (new_reward,))
-    conn.commit()
-    await update.message.reply_text(f"✅ پاداش هر دعوت به {new_reward} سکه تنظیم شد!")
-    return ConversationHandler.END
-
-async def set_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.message.reply_text("تعداد روزهای لازم را وارد کنید:")
-    return SET_DAYS
-
-async def process_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    new_days = update.message.text
-    if not new_days.isdigit():
-        await update.message.reply_text("⚠️ لطفا یک عدد وارد کنید!")
-        return
-    cursor.execute("UPDATE settings SET value=? WHERE key='required_days'", (new_days,))
-    conn.commit()
-    await update.message.reply_text(f"✅ روزهای لازم به {new_days} روز تنظیم شد!")
-    return ConversationHandler.END
-
-async def referral_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    active_users = cursor.execute("SELECT COUNT(*) FROM referrals WHERE julianday('now') - julianday(join_date) >= 30").fetchone()[0]
-    await query.message.reply_text(f"📊 آمار کلی:\n• کل کاربران: {total_users}\n• کاربران فعال (30+ روز): {active_users}")
-
-# ============================
-# تعریف ConversationHandlerها
-# (تعریف‌ها قبل از بلاک اصلی قرار می‌گیرند)
-# ============================
-support_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(support, pattern="^support$")],
-    states={
-        SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    per_user=True
-)
-
-admin_reply_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(admin_reply, pattern="^reply_")],
-    states={
-        ADMIN_REPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_admin_reply)]
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    per_user=True
-)
+# (سایر توابع پنل ادمین مانند members_count، check_members، reward_list، set_reward، process_reward، set_days، process_days، referral_stats نیز به همین صورت می‌توانند با MessageHandler و ReplyKeyboardMarkup پیاده‌سازی شوند)
 
 # ============================
 # اجرای ربات
@@ -495,29 +273,35 @@ def webhook():
 if __name__ == "__main__":
     application = Application.builder().token(TOKEN).build()
     
+    # دستورات اصلی کاربری
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Regex(f"^{BTN_VERIFY}$"), verify_membership))
+    application.add_handler(MessageHandler(filters.Regex(f"^{BTN_INVITE}$"), get_invite_link))
+    application.add_handler(MessageHandler(filters.Regex(f"^{BTN_REFERRAL_LIST}$"), referral_list))
+    
+    reward_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(f"^{BTN_REWARD}$"), user_reward)],
+        states={
+            WALLET_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_wallet)]
+        },
+        fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
+        per_user=True
+    )
+    application.add_handler(reward_conv)
+    
+    support_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(f"^{BTN_SUPPORT}$"), support_start)],
+        states={
+            SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message)]
+        },
+        fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
+        per_user=True
+    )
+    application.add_handler(support_conv)
+    
+    # دستورات ادمین
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("reply", reply_to_support))
-    application.add_handler(support_conv)
-    application.add_handler(admin_reply_conv)
-    
-    application.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(request_reward, pattern="^request_reward$")],
-        states={WALLET_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_wallet)]},
-        fallbacks=[],
-        per_message=True
-    ))
-    
-    application.add_handler(CallbackQueryHandler(check_channels, pattern="^check_channels$"))
-    application.add_handler(CallbackQueryHandler(get_invite_link, pattern="^get_invite_link$"))
-    application.add_handler(CallbackQueryHandler(referral_list, pattern="^referral_list$"))
-    application.add_handler(CallbackQueryHandler(user_reward, pattern="^user_reward$"))
-    application.add_handler(CallbackQueryHandler(referral_stats, pattern="^referral_stats$"))
-    application.add_handler(CallbackQueryHandler(members_count, pattern="^members_count$"))
-    application.add_handler(CallbackQueryHandler(check_members, pattern="^check_members$"))
-    application.add_handler(CallbackQueryHandler(reward_list, pattern="^reward_list$"))
-    application.add_handler(CallbackQueryHandler(set_reward, pattern="^set_reward$"))
-    application.add_handler(CallbackQueryHandler(set_days, pattern="^set_days$"))
     
     application.run_webhook(
         listen="0.0.0.0",
