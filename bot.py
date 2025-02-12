@@ -269,11 +269,78 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     markup = ReplyKeyboardMarkup(admin_menu, resize_keyboard=True)
     await update.message.reply_text("🛠 پنل مدیریت ادمین:", reply_markup=markup)
 
-async def reply_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMINS:
-        await update.message.reply_text("شما دسترسی لازم برای این فرمان را ندارید.")
-        return
-    await update.message.reply_text("قابلیت پاسخ به پشتیبانی در حال حاضر پیاده‌سازی نشده است.")
+# تابع نمایش تعداد اعضای ثبت‌شده
+async def admin_members_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    count = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    await update.message.reply_text(f"👥 تعداد کل اعضا: {count} نفر")
+
+# تابع نمایش پیام‌های پشتیبانی (پیام‌هایی که هنوز پاسخی دریافت نکرده‌اند)
+async def admin_support_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    messages = cursor.execute("SELECT id, telegram_id, message FROM support WHERE reply IS NULL").fetchall()
+    if not messages:
+        await update.message.reply_text("⚠️ هیچ پیام پشتیبانی ثبت نشده است!")
+    else:
+        text = "📩 پیام‌های پشتیبانی:\n"
+        for msg in messages:
+            text += f"ID: {msg[0]} | کاربر: {msg[1]} | پیام: {msg[2]}\n"
+        await update.message.reply_text(text)
+
+# تابع بررسی اعضای فعال (بر اساس تعداد روز مورد نیاز)
+async def admin_check_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
+    active_users = cursor.execute(f"""
+        SELECT inviter_id, COUNT(*) 
+        FROM referrals 
+        WHERE julianday('now') - julianday(join_date) >= {days}
+        GROUP BY inviter_id
+    """).fetchall()
+    if not active_users:
+        await update.message.reply_text("⚠️ هیچ عضو فعالی یافت نشد!")
+    else:
+        text = "✅ گزارش اعضای فعال:\n"
+        for user in active_users:
+            text += f"کاربر {user[0]}: {user[1]} عضو فعال\n"
+        await update.message.reply_text(text)
+
+# تابع نمایش لیست درخواست‌های پاداش
+async def admin_reward_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rewards = cursor.execute("""
+        SELECT u.username, r.amount 
+        FROM reward_requests r
+        JOIN users u ON r.user_id = u.telegram_id
+        WHERE r.status='pending'
+    """).fetchall()
+    if not rewards:
+        await update.message.reply_text("⚠️ هیچ درخواست پاداشی وجود ندارد!")
+    else:
+        text = "🎁 لیست درخواست‌های پاداش:\n"
+        for reward in rewards:
+            text += f"{reward[0]}: {reward[1]} سکه\n"
+        await update.message.reply_text(text)
+
+# تابع درخواست تنظیم مقدار پاداش (تنظیم پاداش برای هر دعوت)
+async def admin_set_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("💰 مقدار جدید پاداش برای هر دعوت را وارد کنید:")
+
+# تابع درخواست تنظیم تعداد روزهای لازم برای فعال شدن دعوت
+async def admin_set_required_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📆 تعداد روزهای لازم را وارد کنید:")
+
+# تابع نمایش آمار کلی دعوت‌ها
+async def admin_referral_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    active_users = cursor.execute("SELECT COUNT(*) FROM referrals WHERE julianday('now') - julianday(join_date) >= 30").fetchone()[0]
+    await update.message.reply_text(f"📊 آمار کلی:\n• کل کاربران: {total_users}\n• کاربران فعال (30+ روز): {active_users}")
+
+# افزودن Handlerها برای دکمه‌های ادمین
+# (این Handlerها باید در بخش ثبت handlerهای application در برنامه اصلی اضافه شوند)
+application.add_handler(MessageHandler(filters.Regex("^👥 تعداد اعضا$"), admin_members_count))
+application.add_handler(MessageHandler(filters.Regex("^📩 پیام‌های پشتیبانی$"), admin_support_messages))
+application.add_handler(MessageHandler(filters.Regex("^✅ چک کردن اعضا$"), admin_check_members))
+application.add_handler(MessageHandler(filters.Regex("^🎁 لیست پاداش‌ها$"), admin_reward_list))
+application.add_handler(MessageHandler(filters.Regex("^💰 تنظیم پاداش$"), admin_set_reward))
+application.add_handler(MessageHandler(filters.Regex("^📆 تنظیم روزهای لازم$"), admin_set_required_days))
+application.add_handler(MessageHandler(filters.Regex("^📊 آمار دعوت‌ها$"), admin_referral_stats))
 
 # ============================
 # اجرای ربات
