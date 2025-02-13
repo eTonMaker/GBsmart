@@ -205,7 +205,7 @@ async def user_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reward_per = int(cursor.execute(
         "SELECT value FROM settings WHERE key='reward_per_user'"
     ).fetchone()[0]
-    
+    )
     total_reward = active_ref * reward_per
     
     reply_kb = [[BTN_RECEIVE_REWARD]]
@@ -269,6 +269,7 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(
             "INSERT INTO support (telegram_id, message) VALUES (?,?)",
             (user_id, message_text)
+        )
         conn.commit()
         support_id = cursor.lastrowid
         
