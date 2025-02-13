@@ -5,6 +5,7 @@ import string
 import os
 from datetime import datetime, timedelta
 from flask import Flask, request
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
@@ -18,7 +19,7 @@ from telegram.ext import (
 # ============================
 # تنظیمات
 # ============================
-TOKEN = "7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"
+TOKEN = os.getenv("7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI") 
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]
 ADMINS = [992366512]
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 # ============================
 # پایگاه داده
 # ============================
-conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
 def init_db():
