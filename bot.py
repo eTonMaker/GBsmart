@@ -24,7 +24,8 @@ from telegram.ext import (
 from dotenv import load_dotenv
 load_dotenv()
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # استفاده از نام صحیح متغیر محیطی
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 if not TOKEN:
     raise ValueError("❌ توکن ربات در محیط تنظیم نشده است!")
 
