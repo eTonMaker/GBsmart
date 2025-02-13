@@ -21,12 +21,16 @@ from telegram.ext import (
 # ============================
 # تنظیمات
 # ============================
-TOKEN="7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"
-TOKEN = os.getenv("7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI") 
-WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN
+from dotenv import load_dotenv
+load_dotenv()
+
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # استفاده از نام صحیح متغیر محیطی
+if not TOKEN:
+    raise ValueError("❌ توکن ربات در محیط تنظیم نشده است!")
+
+WEBHOOK_URL = f"https://gbsmart-49kl.onrender.com/{TOKEN}"
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]
 ADMINS = [992366512]
-TOKEN = os.getenv("TOKEN")
 
 # تعریف حالت‌های مکالمه
 # برای بخش پشتیبانی، دریافت کیف پول، پاسخ ادمین، تنظیم پاداش، تنظیم روزها و دریافت پاداش جدید
