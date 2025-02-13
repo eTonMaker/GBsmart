@@ -21,7 +21,7 @@ from telegram.ext import (
 # ============================
 # تنظیمات
 # ============================
-TOKEN=("7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI") 
+TOKEN="7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI"
 TOKEN = os.getenv("7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI") 
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]
