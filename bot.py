@@ -2,6 +2,8 @@ import logging
 import sqlite3
 import random
 import string
+from dotenv import load_dotenv
+load_dotenv()
 import os
 from datetime import datetime, timedelta
 from flask import Flask, request
@@ -19,10 +21,12 @@ from telegram.ext import (
 # ============================
 # تنظیمات
 # ============================
+TOKEN=("7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI") 
 TOKEN = os.getenv("7482034609:AAFK9VBVIc2UUoAXD2KFpJxSEVAdZl1uefI") 
 WEBHOOK_URL = "https://gbsmart-49kl.onrender.com/" + TOKEN
 CHANNELS = ["@smartmodircom", "@ershadsajadian"]
 ADMINS = [992366512]
+TOKEN = os.getenv("TOKEN")
 
 # تعریف حالت‌های مکالمه
 # برای بخش پشتیبانی، دریافت کیف پول، پاسخ ادمین، تنظیم پاداش، تنظیم روزها و دریافت پاداش جدید
