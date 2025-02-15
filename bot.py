@@ -205,8 +205,7 @@ async def user_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reward_per = int(cursor.execute(
         "SELECT value FROM settings WHERE key='reward_per_user'"
-    ).fetchone()[0]
-    )
+    ).fetchone()[0])
     total_reward = active_ref * reward_per
     
     reply_kb = [[BTN_RECEIVE_REWARD]]
@@ -451,6 +450,29 @@ async def reward_reject_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("⚠️ خطایی رخ داد!")
 
 # ============================
+# مکالمه تنظیم پاداش توسط ادمین
+# ============================
+async def admin_process_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_reward = update.message.text
+    if not new_reward.isdigit():
+        await update.message.reply_text("⚠️ لطفاً یک عدد وارد کنید!")
+        return SET_REWARD
+    cursor.execute("UPDATE settings SET value=? WHERE key='reward_per_user'", (new_reward,))
+    conn.commit()
+    await update.message.reply_text(f"✅ پاداش هر دعوت به {new_reward} سکه تنظیم شد!")
+    return ConversationHandler.END
+
+async def admin_process_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_days = update.message.text
+    if not new_days.isdigit():
+        await update.message.reply_text("⚠️ لطفاً یک عدد وارد کنید!")
+        return SET_DAYS
+    cursor.execute("UPDATE settings SET value=? WHERE key='required_days'", (new_days,))
+    conn.commit()
+    await update.message.reply_text(f"✅ تعداد روزهای لازم به {new_days} روز تنظیم شد!")
+    return ConversationHandler.END
+
+# ============================
 # اجرای ربات
 # ============================
 app = Flask(__name__)
@@ -503,19 +525,39 @@ if __name__ == "__main__":
     )
     application.add_handler(admin_reply_conv)
     
-    # هندلرهای درخواست‌های پاداش توسط ادمین
-    application.add_handler(CallbackQueryHandler(reward_approve_handler, pattern="^approve_"))
-    application.add_handler(CallbackQueryHandler(reward_reject_handler, pattern="^reject_"))
+    # مکالمه تنظیم پاداش توسط ادمین
+    admin_reward_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^💰 تنظیم پاداش$"), admin_set_reward)],
+        states={
+            SET_REWARD: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_process_reward)]
+        },
+        fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
+        per_user=True
+    )
+    application.add_handler(admin_reward_conv)
     
-    # دستورات ادمین
+    # مکالمه تنظیم روزهای لازم توسط ادمین
+    admin_days_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📆 تنظیم روزهای لازم$"), admin_set_required_days)],
+        states={
+            SET_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_process_days)]
+        },
+        fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
+        per_user=True
+    )
+    application.add_handler(admin_days_conv)
+    
+    # دستورات ادمین (بخش‌های ثابت)
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(MessageHandler(filters.Regex("^👥 تعداد اعضا$"), admin_members_count))
     application.add_handler(MessageHandler(filters.Regex("^📩 پیام‌های پشتیبانی$"), admin_support_messages))
     application.add_handler(MessageHandler(filters.Regex("^✅ چک کردن اعضا$"), admin_check_members))
     application.add_handler(MessageHandler(filters.Regex("^🎁 لیست پاداش‌ها$"), admin_reward_list))
-    application.add_handler(MessageHandler(filters.Regex("^💰 تنظیم پاداش$"), admin_set_reward))
-    application.add_handler(MessageHandler(filters.Regex("^📆 تنظیم روزهای لازم$"), admin_set_required_days))
+    # در ادامه هم دستورات تنظیم پاداش و روزها توسط هندلرهای مکالمه تنظیم شده‌اند.
     application.add_handler(MessageHandler(filters.Regex("^📊 آمار دعوت‌ها$"), admin_referral_stats))
+    
+    application.add_handler(CallbackQueryHandler(reward_approve_handler, pattern="^approve_"))
+    application.add_handler(CallbackQueryHandler(reward_reject_handler, pattern="^reject_"))
     
     application.run_webhook(
         listen="0.0.0.0",
