@@ -97,19 +97,15 @@ def init_db():
 init_db()
 
 # ----------------------------
-# تابع کمکی بررسی اعتبار دعوت
+# تابع کمکی بررسی دعوت معتبر
 # ----------------------------
 async def is_valid_referral(context, invited_id, required_days):
     try:
-        # بررسی عضویت در اولین کانال
+        # بررسی عضویت در اولین کانال (برای نمونه)
         member = await context.bot.get_chat_member(CHANNELS[0], invited_id)
         if member.status not in ["member", "creator", "administrator"]:
             return False
-        # اگر امکان دسترسی به last seen وجود داشت (در اینجا به صورت فرضی – API رسمی این فیلد را ارائه نمی‌دهد)
-        # به عنوان مثال:
-        # last_seen = member.user.last_seen   # این فیلد در API تلگرام وجود ندارد، فقط به عنوان نمونه
-        # if (datetime.now() - last_seen).days < 30:
-        #     return False
+        # در اینجا می‌توانیم بررسی‌های بیشتری (مانند آخرین فعالیت) را اضافه کنیم
         return True
     except Exception as e:
         logger.error(f"Error checking referral {invited_id}: {str(e)}")
@@ -252,15 +248,17 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # محاسبه پاداش با فیلتر دعوت‌های معتبر
     days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
     reward_per = int(cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'").fetchone()[0])
-    referrals = cursor.execute("SELECT invited_id, join_date FROM referrals WHERE inviter_id=?", (user_id,)).fetchall()
+    referrals = cursor.execute("SELECT id, invited_id, join_date, verified FROM referrals WHERE inviter_id=? AND verified=0", (user_id,)).fetchall()
     valid_count = 0
     for ref in referrals:
-        invited_id = ref[0]
-        join_date_str = ref[1]
+        ref_id, invited_id, join_date_str, verified = ref
         join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
         if (datetime.now() - join_date).days >= days:
             if await is_valid_referral(context, invited_id, days):
                 valid_count += 1
+                cursor.execute("UPDATE referrals SET verified=1 WHERE id=?", (ref_id,))
+    conn.commit()
+    
     total_reward = valid_count * reward_per
     cursor.execute("INSERT OR REPLACE INTO reward_requests (user_id, amount, status) VALUES (?, ?, 'pending')", (user_id, total_reward))
     conn.commit()
