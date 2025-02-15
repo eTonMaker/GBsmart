@@ -96,6 +96,25 @@ def init_db():
 
 init_db()
 
+# ----------------------------
+# تابع کمکی بررسی اعتبار دعوت
+# ----------------------------
+async def is_valid_referral(context, invited_id, required_days):
+    try:
+        # بررسی عضویت در اولین کانال
+        member = await context.bot.get_chat_member(CHANNELS[0], invited_id)
+        if member.status not in ["member", "creator", "administrator"]:
+            return False
+        # اگر امکان دسترسی به last seen وجود داشت (در اینجا به صورت فرضی – API رسمی این فیلد را ارائه نمی‌دهد)
+        # به عنوان مثال:
+        # last_seen = member.user.last_seen   # این فیلد در API تلگرام وجود ندارد، فقط به عنوان نمونه
+        # if (datetime.now() - last_seen).days < 30:
+        #     return False
+        return True
+    except Exception as e:
+        logger.error(f"Error checking referral {invited_id}: {str(e)}")
+        return False
+
 # ============================
 # دستورات کاربران
 # ============================
@@ -230,16 +249,19 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     conn.commit()
     
-    # ثبت درخواست پاداش در جدول reward_requests
+    # محاسبه پاداش با فیلتر دعوت‌های معتبر
     days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
-    active_ref = cursor.execute(f"""
-        SELECT COUNT(*) 
-        FROM referrals 
-        WHERE inviter_id=? 
-        AND julianday('now') - julianday(join_date) >= {days}
-    """, (user_id,)).fetchone()[0]
     reward_per = int(cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'").fetchone()[0])
-    total_reward = active_ref * reward_per
+    referrals = cursor.execute("SELECT invited_id, join_date FROM referrals WHERE inviter_id=?", (user_id,)).fetchall()
+    valid_count = 0
+    for ref in referrals:
+        invited_id = ref[0]
+        join_date_str = ref[1]
+        join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
+        if (datetime.now() - join_date).days >= days:
+            if await is_valid_referral(context, invited_id, days):
+                valid_count += 1
+    total_reward = valid_count * reward_per
     cursor.execute("INSERT OR REPLACE INTO reward_requests (user_id, amount, status) VALUES (?, ?, 'pending')", (user_id, total_reward))
     conn.commit()
     
@@ -311,7 +333,6 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    # استخراج support_id از callback_data
     support_id = int(query.data.split("_")[1])
     context.user_data["support_id"] = support_id
     await query.message.reply_text("✍️ لطفاً پاسخ خود را وارد کنید:")
@@ -553,7 +574,6 @@ if __name__ == "__main__":
     application.add_handler(MessageHandler(filters.Regex("^📩 پیام‌های پشتیبانی$"), admin_support_messages))
     application.add_handler(MessageHandler(filters.Regex("^✅ چک کردن اعضا$"), admin_check_members))
     application.add_handler(MessageHandler(filters.Regex("^🎁 لیست پاداش‌ها$"), admin_reward_list))
-    # در ادامه هم دستورات تنظیم پاداش و روزها توسط هندلرهای مکالمه تنظیم شده‌اند.
     application.add_handler(MessageHandler(filters.Regex("^📊 آمار دعوت‌ها$"), admin_referral_stats))
     
     application.add_handler(CallbackQueryHandler(reward_approve_handler, pattern="^approve_"))
