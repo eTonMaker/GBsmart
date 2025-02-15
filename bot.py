@@ -343,7 +343,7 @@ async def admin_reply_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ============================
-# پنل ادمین
+# سیستم پنل ادمین
 # ============================
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
@@ -388,7 +388,7 @@ async def admin_check_members(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def admin_reward_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     requests = cursor.execute("""
-        SELECT u.username, r.amount 
+        SELECT u.username, u.wallet_address, r.amount, r.user_id 
         FROM reward_requests r
         JOIN users u ON r.user_id = u.telegram_id
         WHERE r.status='pending'
@@ -397,10 +397,14 @@ async def admin_reward_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not requests:
         await update.message.reply_text("⚠️ هیچ درخواست پاداشی وجود ندارد!")
     else:
-        text = "📜 لیست درخواست‌های پاداش:\n"
         for req in requests:
-            text += f"• {req[0]}: {req[1]} سکه\n"
-        await update.message.reply_text(text)
+            username, wallet, amount, user_id = req
+            text = f"نام کاربر: {username}\nتعداد سکه: {amount}\nشماره کارت: {wallet if wallet else 'نامشخص'}"
+            inline_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("واریز شد", callback_data=f"approve_{user_id}"),
+                 InlineKeyboardButton("درخواست واریز رد شد", callback_data=f"reject_{user_id}")]
+            ])
+            await update.message.reply_text(text, reply_markup=inline_kb)
 
 async def admin_set_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💰 مقدار جدید پاداش برای هر دعوت را وارد کنید:")
@@ -414,6 +418,37 @@ async def admin_referral_stats(update: Update, context: ContextTypes.DEFAULT_TYP
     total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     active_users = cursor.execute("SELECT COUNT(*) FROM referrals WHERE julianday('now') - julianday(join_date) >= 30").fetchone()[0]
     await update.message.reply_text(f"📊 آمار کلی:\n• کل کاربران: {total_users}\n• کاربران فعال (30+ روز): {active_users}")
+
+# ============================
+# سیستم پاسخ‌دهی به درخواست‌های پاداش توسط ادمین
+# ============================
+async def reward_approve_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data  # به شکل "approve_{user_id}"
+    user_id = int(data.split("_")[1])
+    try:
+        cursor.execute("UPDATE reward_requests SET status='paid' WHERE user_id=?", (user_id,))
+        conn.commit()
+        await query.edit_message_text("✅ درخواست پرداخت شد ثبت و کاربر مطلع گردید.")
+        await context.bot.send_message(user_id, "✅ پاداش شما واریز شد.")
+    except Exception as e:
+        logger.error(f"Error in approving reward: {str(e)}")
+        await query.edit_message_text("⚠️ خطایی رخ داد!")
+
+async def reward_reject_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data  # به شکل "reject_{user_id}"
+    user_id = int(data.split("_")[1])
+    try:
+        cursor.execute("UPDATE reward_requests SET status='rejected' WHERE user_id=?", (user_id,))
+        conn.commit()
+        await query.edit_message_text("❌ درخواست پرداخت رد شد.")
+        await context.bot.send_message(user_id, "❌ درخواست پاداش شما رد شد.")
+    except Exception as e:
+        logger.error(f"Error in rejecting reward: {str(e)}")
+        await query.edit_message_text("⚠️ خطایی رخ داد!")
 
 # ============================
 # اجرای ربات
@@ -467,6 +502,10 @@ if __name__ == "__main__":
         fallbacks=[]
     )
     application.add_handler(admin_reply_conv)
+    
+    # هندلرهای درخواست‌های پاداش توسط ادمین
+    application.add_handler(CallbackQueryHandler(reward_approve_handler, pattern="^approve_"))
+    application.add_handler(CallbackQueryHandler(reward_reject_handler, pattern="^reject_"))
     
     # دستورات ادمین
     application.add_handler(CommandHandler("admin", admin_panel))
