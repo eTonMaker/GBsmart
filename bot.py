@@ -231,6 +231,19 @@ async def process_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     conn.commit()
     
+    # ثبت درخواست پاداش در جدول reward_requests
+    days = int(cursor.execute("SELECT value FROM settings WHERE key='required_days'").fetchone()[0])
+    active_ref = cursor.execute(f"""
+        SELECT COUNT(*) 
+        FROM referrals 
+        WHERE inviter_id=? 
+        AND julianday('now') - julianday(join_date) >= {days}
+    """, (user_id,)).fetchone()[0]
+    reward_per = int(cursor.execute("SELECT value FROM settings WHERE key='reward_per_user'").fetchone()[0])
+    total_reward = active_ref * reward_per
+    cursor.execute("INSERT OR REPLACE INTO reward_requests (user_id, amount, status) VALUES (?, ?, 'pending')", (user_id, total_reward))
+    conn.commit()
+    
     main_menu = [
         [BTN_INVITE, BTN_REFERRAL_LIST],
         [BTN_REWARD, BTN_SUPPORT]
